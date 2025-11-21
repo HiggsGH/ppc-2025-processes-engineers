@@ -23,36 +23,18 @@ namespace batushin_i_max_val_rows_matrix {
 class BatushinIMaxValRowsMatrixFuncTests : public ppc::util::BaseRunFuncTests<InType, OutType, TestType> {
  public:
   static std::string PrintTestParam(const TestType &test_param) {
-    return std::to_string(std::get<0>(test_param)) + "_" + std::get<1>(test_param);
+    return std::get<0>(test_param);
   }
 
  protected:
   void SetUp() override {
-    int width = -1;
-    int height = -1;
-    int channels = -1;
-    std::vector<uint8_t> img;
-    // Read image in RGB to ensure consistent channel count
-    {
-      std::string abs_path = ppc::util::GetAbsoluteTaskPath(PPC_ID_batushin_i_max_val_rows_matrix, "pic.jpg");
-      auto *data = stbi_load(abs_path.c_str(), &width, &height, &channels, STBI_rgb);
-      if (data == nullptr) {
-        throw std::runtime_error("Failed to load image: " + std::string(stbi_failure_reason()));
-      }
-      channels = STBI_rgb;
-      img = std::vector<uint8_t>(data, data + (static_cast<ptrdiff_t>(width * height * channels)));
-      stbi_image_free(data);
-      if (std::cmp_not_equal(width, height)) {
-        throw std::runtime_error("width != height: ");
-      }
-    }
-
     TestType params = std::get<static_cast<std::size_t>(ppc::util::GTestParamIndex::kTestParams)>(GetParam());
-    input_data_ = width - height + std::min(std::accumulate(img.begin(), img.end(), 0), channels);
+    input_data_ = std::get<1>(params);
+    expected_result_ = std::get<2>(params);
   }
 
   bool CheckTestOutputData(OutType &output_data) final {
-    return (input_data_ == output_data);
+    return (expected_result_ == output_data);
   }
 
   InType GetTestInputData() final {
@@ -60,16 +42,27 @@ class BatushinIMaxValRowsMatrixFuncTests : public ppc::util::BaseRunFuncTests<In
   }
 
  private:
-  InType input_data_ = 0;
+  InType input_data_;
+  OutType expected_result_;
 };
 
 namespace {
 
-TEST_P(BatushinIMaxValRowsMatrixFuncTests, MatmulFromPic) {
+  InType CreateMatrix(size_t rows, size_t columns, const std::vector<double>& matrix) {
+  return std::make_tuple(rows, columns, matrix);
+}
+
+  TEST_P(BatushinIMaxValRowsMatrixFuncTests, MatmulFromPic) {
   ExecuteTest(GetParam());
 }
 
-const std::array<TestType, 3> kTestParam = {std::make_tuple(3, "3"), std::make_tuple(5, "5"), std::make_tuple(7, "7")};
+const std::array<TestType, 5> kTestParam = {
+  std::make_tuple("3x3", CreateMatrix(3, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}), std::vector<double>({3.0, 6.0, 9.0})),
+  std::make_tuple("single_row", CreateMatrix(1, 4, {1.5, 2.7, 3.1, 2.9}), std::vector<double>({3.1})),
+  std::make_tuple("with_negatives", CreateMatrix(3, 3, {-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0}), std::vector<double>({-1.0, -4.0, -7.0})),
+  std::make_tuple("same_values", CreateMatrix(3, 3, {3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0}), std::vector<double>({3.0, 3.0, 3.0})),
+  std::make_tuple("large_matrix", CreateMatrix(100, 100, std::vector<double>(10000, 1.0)), std::vector<double>(100, 1.0)),
+};
 
 const auto kTestTasksList =
     std::tuple_cat(ppc::util::AddFuncTask<BatushinIMaxValRowsMatrixMPI, InType>(kTestParam, PPC_SETTINGS_batushin_i_max_val_rows_matrix),

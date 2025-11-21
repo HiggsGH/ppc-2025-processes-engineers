@@ -11,50 +11,61 @@ namespace batushin_i_max_val_rows_matrix {
 BatushinIMaxValRowsMatrixSEQ::BatushinIMaxValRowsMatrixSEQ(const InType &in) {
   SetTypeOfTask(GetStaticTypeOfTask());
   GetInput() = in;
-  GetOutput() = 0;
 }
 
 bool BatushinIMaxValRowsMatrixSEQ::ValidationImpl() {
-  return (GetInput() > 0) && (GetOutput() == 0);
-}
+  const auto& input = GetInput();
+  const size_t rows = std::get<0>(input);
+  const size_t columns = std::get<1>(input);
+  const auto& matrix = std::get<2>(input);
 
-bool BatushinIMaxValRowsMatrixSEQ::PreProcessingImpl() {
-  GetOutput() = 2 * GetInput();
-  return GetOutput() > 0;
-}
-
-bool BatushinIMaxValRowsMatrixSEQ::RunImpl() {
-  if (GetInput() == 0) {
+  if (rows == 0 || columns == 0) {
     return false;
   }
 
-  for (InType i = 0; i < GetInput(); i++) {
-    for (InType j = 0; j < GetInput(); j++) {
-      for (InType k = 0; k < GetInput(); k++) {
-        std::vector<InType> tmp(i + j + k, 1);
-        GetOutput() += std::accumulate(tmp.begin(), tmp.end(), 0);
-        GetOutput() -= i + j + k;
+  if (matrix.size() != rows * columns) {
+    return false;
+  }
+
+  return GetOutput().empty();
+}
+
+bool BatushinIMaxValRowsMatrixSEQ::PreProcessingImpl() {
+  const auto& input = GetInput();
+  const size_t rows = std::get<0>(input);
+  const size_t columns = std::get<1>(input);
+  const auto& matrix = std::get<2>(input);
+
+  return (rows > 0) && (columns > 0) && (matrix.size() == rows * columns);
+}
+
+bool BatushinIMaxValRowsMatrixSEQ::RunImpl() {
+  const auto& input = GetInput();
+  const size_t rows = std::get<0>(input);
+  const size_t columns = std::get<1>(input);
+  const auto& matrix = std::get<2>(input);
+  auto& res = GetOutput();
+
+  res.resize(rows);
+
+  for (size_t i = 0; i < rows; i++) {
+    double max_val = matrix[i * columns];
+
+    for (size_t j = 1; j < columns; j++) {
+      const double curr_val = matrix[i * columns + j];
+      if (curr_val > max_val) {
+        max_val = curr_val;
       }
     }
+
+    res[i] = max_val;
   }
 
-  const int num_threads = ppc::util::GetNumThreads();
-  GetOutput() *= num_threads;
-
-  int counter = 0;
-  for (int i = 0; i < num_threads; i++) {
-    counter++;
-  }
-
-  if (counter != 0) {
-    GetOutput() /= counter;
-  }
-  return GetOutput() > 0;
+  return true;
 }
 
 bool BatushinIMaxValRowsMatrixSEQ::PostProcessingImpl() {
-  GetOutput() -= GetInput();
-  return GetOutput() > 0;
+  return !GetOutput().empty();
 }
 
 }  // namespace batushin_i_max_val_rows_matrix

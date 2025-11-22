@@ -51,7 +51,7 @@ TEST_P(BatushinIMaxValRowsMatrixFuncTests, MatmulFromPic) {
   ExecuteTest(GetParam());
 }
 
-const std::array<TestType, 10> kTestParam = {
+const std::array<TestType, 13> kTestParam = {
     std::make_tuple("3x3", CreateMatrix(3, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}),
                     std::vector<double>({3.0, 6.0, 9.0})),
     std::make_tuple("single_row", CreateMatrix(1, 4, {1.5, 2.7, 3.1, 2.9}), std::vector<double>({3.1})),
@@ -72,6 +72,11 @@ const std::array<TestType, 10> kTestParam = {
                     CreateMatrix(7, 2, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0}),
                     std::vector<double>({2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0})),
     std::make_tuple("two_by_one_matrix", CreateMatrix(2, 1, {5.0, 3.0}), std::vector<double>({5.0, 3.0})),
+    std::make_tuple("wrong_size_matrix", CreateMatrix(2, 3, {1.0, 2.0, 3.0, 4.0, 5.0}), std::vector<double>()),
+    std::make_tuple("2proc_3rows", CreateMatrix(3, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}),
+                    std::vector<double>({3.0, 6.0, 9.0})),
+    std::make_tuple("3proc_5rows", CreateMatrix(5, 2, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0}),
+                    std::vector<double>({2.0, 4.0, 6.0, 8.0, 10.0})),
 };
 
 const auto kTestTasksList = std::tuple_cat(ppc::util::AddFuncTask<BatushinIMaxValRowsMatrixMPI, InType>(

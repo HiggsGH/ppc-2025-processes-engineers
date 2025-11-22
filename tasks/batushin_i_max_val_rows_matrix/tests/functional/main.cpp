@@ -61,8 +61,7 @@ const std::array<TestType, 7> kTestParam = {
                     std::vector<double>({3.0, 3.0, 3.0})),
     std::make_tuple("large_matrix", CreateMatrix(100, 100, std::vector<double>(10000, 1.0)),
                     std::vector<double>(100, 1.0)),
-    std::make_tuple("single_element", CreateMatrix(1, 1, {3.0}),
-                    std::vector<double>({3.0})),
+    std::make_tuple("single_element", CreateMatrix(1, 1, {3.0}), std::vector<double>({3.0})),
     std::make_tuple("two_rows_three_columns", CreateMatrix(2, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0}),
                     std::vector<double>({3.0, 6.0})),
 };

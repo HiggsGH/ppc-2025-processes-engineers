@@ -1,7 +1,7 @@
 #include "batushin_i_max_val_rows_matrix/seq/include/ops_seq.hpp"
 
-#include <cstddef>
 #include <algorithm>
+#include <cstddef>
 #include <vector>
 
 #include "batushin_i_max_val_rows_matrix/common/include/common.hpp"

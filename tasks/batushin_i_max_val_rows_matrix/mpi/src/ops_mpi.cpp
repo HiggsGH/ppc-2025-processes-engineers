@@ -2,12 +2,11 @@
 
 #include <mpi.h>
 
-#include <cstddef>
 #include <algorithm>
+#include <cstddef>
 #include <vector>
 
 #include "batushin_i_max_val_rows_matrix/common/include/common.hpp"
-
 
 namespace batushin_i_max_val_rows_matrix {
 

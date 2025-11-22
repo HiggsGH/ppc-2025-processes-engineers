@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 #include "batushin_i_max_val_rows_matrix/common/include/common.hpp"
@@ -57,7 +58,7 @@ bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
   size_t extra_rows = rows % proc;
 
   size_t start_row = (rank * base_rows) + std::min<size_t>(rank, extra_rows);
-  size_t end_row = start_row + base_rows + (rank < static_cast<int>(extra_rows) ? 1 : 0);
+  size_t end_row = start_row + base_rows + (std::cmp_less(rank, extra_rows) ? 1 : 0);
 
   std::vector<double> loc_max;
 
@@ -80,7 +81,7 @@ bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
 
     for (int src = 1; src < proc; src++) {
       size_t src_start = (src * base_rows) + std::min<size_t>(src, extra_rows);
-      size_t src_size = base_rows + (src < static_cast<int>(extra_rows) ? 1 : 0);
+      size_t src_size = base_rows + (std::cmp_less(src, extra_rows) ? 1 : 0);
 
       std::vector<double> recv_buf(src_size);
       MPI_Recv(recv_buf.data(), static_cast<int>(src_size), MPI_DOUBLE, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);

@@ -48,25 +48,30 @@ class BatushinIMaxValRowsMatrixFuncTests : public ppc::util::BaseRunFuncTests<In
 
 namespace {
 
-  InType CreateMatrix(size_t rows, size_t columns, const std::vector<double>& matrix) {
+InType CreateMatrix(size_t rows, size_t columns, const std::vector<double> &matrix) {
   return std::make_tuple(rows, columns, matrix);
 }
 
-  TEST_P(BatushinIMaxValRowsMatrixFuncTests, MatmulFromPic) {
+TEST_P(BatushinIMaxValRowsMatrixFuncTests, MatmulFromPic) {
   ExecuteTest(GetParam());
 }
 
 const std::array<TestType, 5> kTestParam = {
-  std::make_tuple("3x3", CreateMatrix(3, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}), std::vector<double>({3.0, 6.0, 9.0})),
-  std::make_tuple("single_row", CreateMatrix(1, 4, {1.5, 2.7, 3.1, 2.9}), std::vector<double>({3.1})),
-  std::make_tuple("with_negatives", CreateMatrix(3, 3, {-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0}), std::vector<double>({-1.0, -4.0, -7.0})),
-  std::make_tuple("same_values", CreateMatrix(3, 3, {3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0}), std::vector<double>({3.0, 3.0, 3.0})),
-  std::make_tuple("large_matrix", CreateMatrix(100, 100, std::vector<double>(10000, 1.0)), std::vector<double>(100, 1.0)),
+    std::make_tuple("3x3", CreateMatrix(3, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}),
+                    std::vector<double>({3.0, 6.0, 9.0})),
+    std::make_tuple("single_row", CreateMatrix(1, 4, {1.5, 2.7, 3.1, 2.9}), std::vector<double>({3.1})),
+    std::make_tuple("with_negatives", CreateMatrix(3, 3, {-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0}),
+                    std::vector<double>({-1.0, -4.0, -7.0})),
+    std::make_tuple("same_values", CreateMatrix(3, 3, {3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0}),
+                    std::vector<double>({3.0, 3.0, 3.0})),
+    std::make_tuple("large_matrix", CreateMatrix(100, 100, std::vector<double>(10000, 1.0)),
+                    std::vector<double>(100, 1.0)),
 };
 
-const auto kTestTasksList =
-    std::tuple_cat(ppc::util::AddFuncTask<BatushinIMaxValRowsMatrixMPI, InType>(kTestParam, PPC_SETTINGS_batushin_i_max_val_rows_matrix),
-                   ppc::util::AddFuncTask<BatushinIMaxValRowsMatrixSEQ, InType>(kTestParam, PPC_SETTINGS_batushin_i_max_val_rows_matrix));
+const auto kTestTasksList = std::tuple_cat(ppc::util::AddFuncTask<BatushinIMaxValRowsMatrixMPI, InType>(
+                                               kTestParam, PPC_SETTINGS_batushin_i_max_val_rows_matrix),
+                                           ppc::util::AddFuncTask<BatushinIMaxValRowsMatrixSEQ, InType>(
+                                               kTestParam, PPC_SETTINGS_batushin_i_max_val_rows_matrix));
 
 const auto kGtestValues = ppc::util::ExpandToValues(kTestTasksList);
 

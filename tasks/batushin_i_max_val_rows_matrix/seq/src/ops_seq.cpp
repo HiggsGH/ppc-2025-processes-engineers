@@ -1,10 +1,10 @@
 #include "batushin_i_max_val_rows_matrix/seq/include/ops_seq.hpp"
 
-#include <numeric>
+#include <cstddef>
+#include <algorithm>
 #include <vector>
 
 #include "batushin_i_max_val_rows_matrix/common/include/common.hpp"
-#include "util/include/util.hpp"
 
 namespace batushin_i_max_val_rows_matrix {
 
@@ -52,10 +52,8 @@ bool BatushinIMaxValRowsMatrixSEQ::RunImpl() {
     double max_val = matrix[i * columns];
 
     for (size_t j = 1; j < columns; j++) {
-      const double curr_val = matrix[i * columns + j];
-      if (curr_val > max_val) {
-        max_val = curr_val;
-      }
+      const double curr_val = matrix[(i * columns) + j];
+      max_val = std::max(curr_val, max_val);
     }
 
     res[i] = max_val;

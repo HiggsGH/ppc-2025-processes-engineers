@@ -8,13 +8,14 @@
 namespace batushin_i_max_val_rows_matrix {
 
 class BatushinIMaxValRowsMatrixPerfTests : public ppc::util::BaseRunPerfTests<InType, OutType> {
-  private:
-    InType input_data_;
-    OutType expected_result_;
-  public:
+ private:
+  InType input_data_;
+  OutType expected_result_;
+
+ public:
   void SetUp() override {
-    const size_t rows = 2000;
-    const size_t columns = 2000;
+    const size_t rows = 5000;
+    const size_t columns = 5000;
 
     std::vector<double> matrix_data(rows * columns);
 
@@ -43,7 +44,8 @@ TEST_P(BatushinIMaxValRowsMatrixPerfTests, RunPerfModes) {
 }
 
 const auto kAllPerfTasks =
-    ppc::util::MakeAllPerfTasks<InType, BatushinIMaxValRowsMatrixMPI, BatushinIMaxValRowsMatrixSEQ>(PPC_SETTINGS_batushin_i_max_val_rows_matrix);
+    ppc::util::MakeAllPerfTasks<InType, BatushinIMaxValRowsMatrixMPI, BatushinIMaxValRowsMatrixSEQ>(
+        PPC_SETTINGS_batushin_i_max_val_rows_matrix);
 
 const auto kGtestValues = ppc::util::TupleToGTestValues(kAllPerfTasks);
 

@@ -64,10 +64,13 @@ const std::array<TestType, 10> kTestParam = {
     std::make_tuple("single_element", CreateMatrix(1, 1, {3.0}), std::vector<double>({3.0})),
     std::make_tuple("two_rows_three_columns", CreateMatrix(2, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0}),
                     std::vector<double>({3.0, 6.0})),
-    std::make_tuple("three_proc_five_rows", CreateMatrix(5, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0}), 
+    std::make_tuple(
+        "three_proc_five_rows",
+        CreateMatrix(5, 3, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0}),
         std::vector<double>({3.0, 6.0, 9.0, 12.0, 15.0})),
-    std::make_tuple("four_proc_seven_rows", CreateMatrix(7, 2, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0}),
-        std::vector<double>({2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0})),
+    std::make_tuple("four_proc_seven_rows",
+                    CreateMatrix(7, 2, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0}),
+                    std::vector<double>({2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0})),
     std::make_tuple("two_by_one_matrix", CreateMatrix(2, 1, {5.0, 3.0}), std::vector<double>({5.0, 3.0})),
 };
 

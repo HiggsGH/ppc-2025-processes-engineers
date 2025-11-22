@@ -1,9 +1,8 @@
 #include <gtest/gtest.h>
 
-
 #include <cstddef>
-#include <vector>
 #include <tuple>
+#include <vector>
 
 #include "batushin_i_max_val_rows_matrix/common/include/common.hpp"
 #include "batushin_i_max_val_rows_matrix/mpi/include/ops_mpi.hpp"

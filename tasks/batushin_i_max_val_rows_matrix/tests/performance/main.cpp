@@ -1,5 +1,10 @@
 #include <gtest/gtest.h>
 
+
+#include <cstddef>
+#include <vector>
+#include <tuple>
+
 #include "batushin_i_max_val_rows_matrix/common/include/common.hpp"
 #include "batushin_i_max_val_rows_matrix/mpi/include/ops_mpi.hpp"
 #include "batushin_i_max_val_rows_matrix/seq/include/ops_seq.hpp"
@@ -21,7 +26,7 @@ class BatushinIMaxValRowsMatrixPerfTests : public ppc::util::BaseRunPerfTests<In
 
     for (size_t i = 0; i < rows; i++) {
       for (size_t j = 0; j < columns; j++) {
-        matrix_data[i * columns + j] = static_cast<double>(j);
+        matrix_data[(i * columns) + j] = static_cast<double>(j);
       }
     }
 

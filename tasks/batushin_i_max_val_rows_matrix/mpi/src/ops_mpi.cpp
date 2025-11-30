@@ -43,6 +43,8 @@ bool BatushinIMaxValRowsMatrixMPI::PreProcessingImpl() {
   return (rows > 0) && (columns > 0) && (matrix.size() == rows * columns);
 }
 
+namespace {
+
 static std::pair<size_t, size_t> GetRowRange(int rank, int proc, size_t rows) {
   size_t base_rows = rows / proc;
   size_t extra_rows = rows % proc;
@@ -104,6 +106,8 @@ static void SynchronizationResult(int rank, std::vector<double> &res) {
     MPI_Bcast(res.data(), res_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
 }
+
+}  // namespace
 
 bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
   int rank = 0, proc = 0;

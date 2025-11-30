@@ -215,7 +215,9 @@ PPC_NUM_PROC=1,2,4,8
 ## 10. Приложение
 
 ```cpp
-static std::pair<size_t, size_t> GetRowRange(int rank, int proc, size_t rows) {
+namespace {
+
+std::pair<size_t, size_t> GetRowRange(int rank, int proc, size_t rows) {
   size_t base_rows = rows / proc;
   size_t extra_rows = rows % proc;
 
@@ -225,8 +227,7 @@ static std::pair<size_t, size_t> GetRowRange(int rank, int proc, size_t rows) {
   return {start_row, end_row};
 }
 
-static std::vector<double> CalcLocalMax(size_t start_row, size_t end_row, size_t columns,
-                                        const std::vector<double> &matrix) {
+std::vector<double> CalcLocalMax(size_t start_row, size_t end_row, size_t columns, const std::vector<double> &matrix) {
   std::vector<double> loc_max;
 
   for (size_t i = start_row; i < end_row; i++) {
@@ -241,8 +242,8 @@ static std::vector<double> CalcLocalMax(size_t start_row, size_t end_row, size_t
   return loc_max;
 }
 
-static void CollectResults(int rank, int proc, size_t rows, const std::vector<double> &loc_max, size_t start_row,
-                           std::vector<double> &res) {
+void CollectResults(int rank, int proc, size_t rows, const std::vector<double> &loc_max, size_t start_row,
+                    std::vector<double> &res) {
   if (rank == 0) {
     for (size_t i = 0; i < loc_max.size(); i++) {
       res[start_row + i] = loc_max[i];
@@ -264,7 +265,7 @@ static void CollectResults(int rank, int proc, size_t rows, const std::vector<do
   }
 }
 
-static void SynchronizationResult(int rank, std::vector<double> &res) {
+void SynchronizationResult(int rank, std::vector<double> &res) {
   if (rank == 0) {
     int res_size = static_cast<int>(res.size());
     MPI_Bcast(&res_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -277,8 +278,12 @@ static void SynchronizationResult(int rank, std::vector<double> &res) {
   }
 }
 
+}  // namespace
+
 bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
-  int rank = 0, proc = 0;
+  int rank = 0;
+  int proc = 0;
+
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &proc);
 

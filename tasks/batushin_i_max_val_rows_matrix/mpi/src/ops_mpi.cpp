@@ -109,7 +109,9 @@ void SynchronizationResult(int rank, std::vector<double> &res) {
 }  // namespace
 
 bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
-  int rank = 0, proc = 0;
+  int rank = 0;
+  int proc = 0;
+
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &proc);
 

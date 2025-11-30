@@ -98,6 +98,12 @@ rows_per_process[rank] = base_rows + (rank < extra_rows ? 1 : 0)
 - `RunImpl()` - основной алгоритм
 - `PostProcessingImpl()` - завершающая обработка
 
+**Вспомогательные функции:**
+- `GetRowRange()` - вычисление диапазона строк для процесса
+- `CalcLocalMax()` - вычисление локальных максимумов
+- `CollectResults()` - сбор результатов от всех процессов  
+- `SynchronizationResult()` - синхронизация финального результата
+
 **Допущения:**
 - Матрица хранится построчно
 - Все процессы имеют доступ ко всей матрице (в MPI версии)
@@ -209,23 +215,18 @@ PPC_NUM_PROC=1,2,4,8
 ## 10. Приложение
 
 ```cpp
-bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
-  int rank = 0;
-  int proc = 0;
-
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &proc);
-
-  size_t rows = std::get<0>(GetInput());
-  size_t columns = std::get<1>(GetInput());
-  const auto &matrix = std::get<2>(GetInput());
-
+static std::pair<size_t, size_t> GetRowRange(int rank, int proc, size_t rows) {
   size_t base_rows = rows / proc;
   size_t extra_rows = rows % proc;
 
   size_t start_row = (rank * base_rows) + std::min<size_t>(rank, extra_rows);
   size_t end_row = start_row + base_rows + (std::cmp_less(rank, extra_rows) ? 1 : 0);
 
+  return {start_row, end_row};
+}
+
+static std::vector<double> CalcLocalMax(size_t start_row, size_t end_row, size_t columns,
+                                        const std::vector<double> &matrix) {
   std::vector<double> loc_max;
 
   for (size_t i = start_row; i < end_row; i++) {
@@ -237,17 +238,19 @@ bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
     loc_max.push_back(max_val);
   }
 
-  std::vector<double> res;
-  if (rank == 0) {
-    res.resize(rows);
+  return loc_max;
+}
 
+static void CollectResults(int rank, int proc, size_t rows, const std::vector<double> &loc_max, size_t start_row,
+                           std::vector<double> &res) {
+  if (rank == 0) {
     for (size_t i = 0; i < loc_max.size(); i++) {
       res[start_row + i] = loc_max[i];
     }
 
     for (int src = 1; src < proc; src++) {
-      size_t src_start = (src * base_rows) + std::min<size_t>(src, extra_rows);
-      size_t src_size = base_rows + (std::cmp_less(src, extra_rows) ? 1 : 0);
+      auto [src_start, src_end] = GetRowRange(src, proc, rows);
+      size_t src_size = src_end - src_start;
 
       std::vector<double> recv_buf(src_size);
       MPI_Recv(recv_buf.data(), static_cast<int>(src_size), MPI_DOUBLE, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -259,22 +262,42 @@ bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
   } else {
     MPI_Send(loc_max.data(), static_cast<int>(loc_max.size()), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
   }
+}
 
+static void SynchronizationResult(int rank, std::vector<double> &res) {
   if (rank == 0) {
     int res_size = static_cast<int>(res.size());
     MPI_Bcast(&res_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
     MPI_Bcast(res.data(), res_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   } else {
     int res_size = 0;
     MPI_Bcast(&res_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
     res.resize(res_size);
     MPI_Bcast(res.data(), res_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
+}
+
+bool BatushinIMaxValRowsMatrixMPI::RunImpl() {
+  int rank = 0, proc = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &proc);
+
+  size_t rows = std::get<0>(GetInput());
+  size_t columns = std::get<1>(GetInput());
+  const auto &matrix = std::get<2>(GetInput());
+
+  auto [start_row, end_row] = GetRowRange(rank, proc, rows);
+  auto loc_max = CalcLocalMax(start_row, end_row, columns, matrix);
+
+  std::vector<double> res;
+  if (rank == 0) {
+    res.resize(rows);
+  }
+
+  CollectResults(rank, proc, rows, loc_max, start_row, res);
+  SynchronizationResult(rank, res);
 
   GetOutput() = res;
-
   return true;
 }
 ```

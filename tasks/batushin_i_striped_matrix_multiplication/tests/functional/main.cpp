@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <stb/stb_image.h>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -16,7 +15,6 @@
 #include "batushin_i_striped_matrix_multiplication/mpi/include/ops_mpi.hpp"
 #include "batushin_i_striped_matrix_multiplication/seq/include/ops_seq.hpp"
 #include "util/include/func_test_util.hpp"
-#include "util/include/util.hpp"
 
 namespace batushin_i_striped_matrix_multiplication {
 

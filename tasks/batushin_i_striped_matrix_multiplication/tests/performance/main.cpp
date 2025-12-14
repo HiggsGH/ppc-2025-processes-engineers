@@ -21,14 +21,14 @@ class BatushinIStripedMatrixMultiplicationPerfTests : public ppc::util::BaseRunP
     std::vector<double> matrix_a(rows_a * columns_a);
     for (size_t i = 0; i < rows_a; i++) {
       for (size_t j = 0; j < columns_a; j++) {
-        matrix_a[i * columns_a + j] = static_cast<double>(i + j);
+        matrix_a[(i * columns_a) + j] = static_cast<double>(i + j);
       }
     }
 
     std::vector<double> matrix_b(rows_b * columns_b);
     for (size_t i = 0; i < rows_b; i++) {
       for (size_t j = 0; j < columns_b; j++) {
-        matrix_b[i * columns_b + j] = static_cast<double>(i * j);
+        matrix_b[(i * columns_b) + j] = static_cast<double>(i * j);
       }
     }
 

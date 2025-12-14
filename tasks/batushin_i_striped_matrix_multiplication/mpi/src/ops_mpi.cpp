@@ -2,11 +2,13 @@
 
 #include <mpi.h>
 
-#include <numeric>
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <utility>
 #include <vector>
 
 #include "batushin_i_striped_matrix_multiplication/common/include/common.hpp"
-#include "util/include/util.hpp"
 
 namespace batushin_i_striped_matrix_multiplication {
 

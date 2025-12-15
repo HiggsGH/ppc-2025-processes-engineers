@@ -53,7 +53,7 @@ std::pair<size_t, size_t> CalculateRowDistribution(int rank, int size, size_t n,
   rows_per_proc = n / size;
   extra_rows = n % size;
 
-  size_t my_rows = rows_per_proc + (rank < static_cast<int>(extra_rows) ? 1 : 0);
+  size_t my_rows = rows_per_proc + (std::cmp_less(rank, extra_rows) ? 1 : 0);
   size_t my_start = (rank * rows_per_proc) + std::min<size_t>(rank, extra_rows);
 
   return {my_rows, my_start};
@@ -70,7 +70,7 @@ void FillLocalPart(size_t my_rows, size_t m, size_t my_start, const std::vector<
 
 void FillBufferForProcess(int dest, size_t m, size_t rows_per_proc, size_t extra_rows,
                           const std::vector<double> &matrix_a, std::vector<double> &buffer) {
-  size_t dest_rows = rows_per_proc + (dest < static_cast<int>(extra_rows) ? 1 : 0);
+  size_t dest_rows = rows_per_proc + (std::cmp_less(dest, extra_rows) ? 1 : 0);
   if (dest_rows == 0) {
     return;
   }
@@ -148,7 +148,7 @@ void FillLocalResultPart(size_t my_rows, size_t my_start, size_t p, const std::v
 }
 
 void ReceiveFromProcess(int src, size_t p, size_t rows_per_proc, size_t extra_rows, std::vector<double> &result) {
-  size_t src_rows = rows_per_proc + (src < static_cast<int>(extra_rows) ? 1 : 0);
+  size_t src_rows = rows_per_proc + (std::cmp_less(src, extra_rows) ? 1 : 0);
   if (src_rows == 0) {
     return;
   }
@@ -185,14 +185,21 @@ void GatherResults(int rank, int size, const std::vector<double> &local_c, size_
 void SynchronizeResult(int rank, std::vector<double> &result) {
   if (rank == 0) {
     int result_size = static_cast<int>(result.size());
+
     MPI_Bcast(&result_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(result.data(), result_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    if (result_size > 0) {
+      MPI_Bcast(result.data(), result_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    }
   } else {
     int result_size = 0;
     MPI_Bcast(&result_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    result.resize(result_size);
+
     if (result_size > 0) {
+      result.resize(result_size);
       MPI_Bcast(result.data(), result_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    } else {
+      result.clear();
     }
   }
 }
@@ -215,18 +222,26 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
   const size_t columns_b = std::get<4>(input);
   const auto &matrix_b = std::get<5>(input);
 
-  std::array<size_t, 4> dims{};
+  std::array<unsigned long long, 4> dims{};
   if (rank == 0) {
     dims[0] = rows_a;
     dims[1] = columns_a;
     dims[2] = rows_b;
     dims[3] = columns_b;
   }
-  MPI_Bcast(dims.data(), 4, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
 
-  const size_t n = dims[0];
-  const size_t m = dims[1];
-  const size_t p = dims[3];
+  MPI_Bcast(dims.data(), 4, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
+
+  const size_t n = static_cast<size_t>(dims[0]);
+  const size_t m = static_cast<size_t>(dims[1]);
+  const size_t p = static_cast<size_t>(dims[3]);
+
+  if (n == 0 || m == 0 || p == 0) {
+    if (rank == 0) {
+      GetOutput() = std::vector<double>();
+    }
+    return true;
+  }
 
   size_t rows_per_proc = 0;
   size_t extra_rows = 0;

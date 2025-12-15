@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -222,7 +223,7 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
   const size_t columns_b = std::get<4>(input);
   const auto &matrix_b = std::get<5>(input);
 
-  std::array<unsigned long long, 4> dims{};
+  std::array<uint64_t, 4> dims{};
   if (rank == 0) {
     dims[0] = rows_a;
     dims[1] = columns_a;
@@ -232,9 +233,9 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
 
   MPI_Bcast(dims.data(), 4, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
 
-  const size_t n = static_cast<size_t>(dims[0]);
-  const size_t m = static_cast<size_t>(dims[1]);
-  const size_t p = static_cast<size_t>(dims[3]);
+  const auto n = static_cast<size_t>(dims[0]);
+  const auto m = static_cast<size_t>(dims[1]);
+  const auto p = static_cast<size_t>(dims[3]);
 
   if (n == 0 || m == 0 || p == 0) {
     if (rank == 0) {

@@ -3,12 +3,8 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
-#include <numeric>
-#include <stdexcept>
 #include <string>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 #include "batushin_i_striped_matrix_multiplication/common/include/common.hpp"

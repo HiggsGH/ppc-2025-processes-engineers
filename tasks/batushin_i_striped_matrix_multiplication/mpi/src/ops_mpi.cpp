@@ -46,7 +46,9 @@ bool BatushinIStripedMatrixMultiplicationMPI::PreProcessingImpl() {
 }
 
 bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
-  int rank, size;
+  int rank = 0;
+  int size = 0;
+
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
@@ -59,8 +61,8 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
   const size_t columns_b = std::get<4>(input);
   const auto &matrix_b = std::get<5>(input);
 
-  size_t dims[4] = {rows_a, columns_a, rows_b, columns_b};
-  MPI_Bcast(dims, 4, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+  std::array<size_t, 4> dims = {rows_a, columns_a, rows_b, columns_b};
+  MPI_Bcast(dims.data(), 4, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
 
   const size_t n = dims[0];
   const size_t m = dims[1];
@@ -69,8 +71,8 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
   size_t rows_per_proc = n / size;
   size_t extra_rows = n % size;
 
-  size_t my_rows = rows_per_proc + (rank < static_cast<int>(extra_rows) ? 1 : 0);
-  size_t my_start = rank * rows_per_proc + std::min<size_t>(rank, extra_rows);
+  size_t my_rows = rows_per_proc + (std::cmp_less(rank, extra_rows) ? 1 : 0);
+  size_t my_start = (rank * rows_per_proc) + std::min<size_t>(rank, extra_rows);
 
   std::vector<double> local_a(my_rows * m);
   std::vector<double> local_c(my_rows * p, 0.0);
@@ -78,19 +80,19 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
   if (rank == 0) {
     for (size_t i = 0; i < my_rows; i++) {
       for (size_t j = 0; j < m; j++) {
-        local_a[i * m + j] = matrix_a[(my_start + i) * m + j];
+        local_a[(i * m) + j] = matrix_a[((my_start + i) * m) + j];
       }
     }
 
     for (int dest = 1; dest < size; dest++) {
-      size_t dest_rows = rows_per_proc + (dest < static_cast<int>(extra_rows) ? 1 : 0);
+      size_t dest_rows = rows_per_proc + (std::cmp_less(dest, extra_rows) ? 1 : 0);
       if (dest_rows > 0) {
         size_t dest_start = dest * rows_per_proc + std::min<size_t>(dest, extra_rows);
 
         std::vector<double> buffer(dest_rows * m);
         for (size_t i = 0; i < dest_rows; i++) {
           for (size_t j = 0; j < m; j++) {
-            buffer[i * m + j] = matrix_a[(dest_start + i) * m + j];
+            buffer[(i * m) + j] = matrix_a[((dest_start + i) * m) + j];
           }
         }
 
@@ -111,9 +113,9 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
     for (size_t j = 0; j < p; j++) {
       double sum = 0.0;
       for (size_t k = 0; k < m; k++) {
-        sum += local_a[i * m + k] * local_b[k * p + j];
+        sum += local_a[(i * m) + k] * local_b[(k * p) + j];
       }
-      local_c[i * p + j] = sum;
+      local_c[(i * p) + j] = sum;
     }
   }
 
@@ -122,12 +124,12 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
 
     for (size_t i = 0; i < my_rows; i++) {
       for (size_t j = 0; j < p; j++) {
-        result[(my_start + i) * p + j] = local_c[i * p + j];
+        result[((my_start + i) * p) + j] = local_c[(i * p) + j];
       }
     }
 
     for (int src = 1; src < size; src++) {
-      size_t src_rows = rows_per_proc + (src < static_cast<int>(extra_rows) ? 1 : 0);
+      size_t src_rows = rows_per_proc + (std::cmp_less(src, extra_rows) ? 1 : 0);
       if (src_rows > 0) {
         size_t src_start = src * rows_per_proc + std::min<size_t>(src, extra_rows);
 
@@ -136,7 +138,7 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
 
         for (size_t i = 0; i < src_rows; i++) {
           for (size_t j = 0; j < p; j++) {
-            result[(src_start + i) * p + j] = buffer[i * p + j];
+            result[((src_start + i) * p) + j] = buffer[(i * p) + j];
           }
         }
       }

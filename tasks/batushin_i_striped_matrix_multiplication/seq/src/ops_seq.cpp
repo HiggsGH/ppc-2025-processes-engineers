@@ -74,9 +74,9 @@ bool BatushinIStripedMatrixMultiplicationSEQ::RunImpl() {
     for (size_t j = 0; j < columns_b; j++) {
       double sum = 0.0;
       for (size_t k = 0; k < columns_a; k++) {
-        sum += matrix_a[i * columns_a + k] * matrix_b[k * columns_b + j];
+        sum += matrix_a[(i * columns_a) + k] * matrix_b[(k * columns_b) + j];
       }
-      result[i * columns_b + j] = sum;
+      result[(i * columns_b) + j] = sum;
     }
   }
 

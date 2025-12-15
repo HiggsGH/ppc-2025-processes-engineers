@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <tuple>
+#include <vector>
+
 #include "batushin_i_striped_matrix_multiplication/common/include/common.hpp"
 #include "batushin_i_striped_matrix_multiplication/mpi/include/ops_mpi.hpp"
 #include "batushin_i_striped_matrix_multiplication/seq/include/ops_seq.hpp"

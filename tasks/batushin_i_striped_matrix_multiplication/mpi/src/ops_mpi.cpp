@@ -113,7 +113,7 @@ std::vector<double> DistributeMatrixA(int rank, int size, size_t my_rows, size_t
 std::vector<double> DistributeMatrixB(int rank, int size, size_t m, size_t p, const std::vector<double> &matrix_b) {
   size_t columns_per_proc = p / size;
   size_t extra_columns = p % size;
-  size_t my_columns = columns_per_proc + (rank < extra_columns ? 1 : 0);
+  size_t my_columns = columns_per_proc + (std::cmp_less(rank, extra_columns) ? 1 : 0);
   size_t my_start_columns = (rank * columns_per_proc) + std::min<size_t>(rank, extra_columns);
 
   std::vector<double> local_b(m * my_columns);
@@ -127,7 +127,7 @@ std::vector<double> DistributeMatrixB(int rank, int size, size_t m, size_t p, co
     }
 
     for (int dest = 1; dest < size; ++dest) {
-      size_t dest_columns = columns_per_proc + (dest < extra_columns ? 1 : 0);
+      size_t dest_columns = columns_per_proc + (std::cmp_less(dest, extra_columns) ? 1 : 0);
       size_t dest_start = (dest * columns_per_proc) + std::min<size_t>(dest, extra_columns);
 
       std::vector<double> buffer(m * dest_columns);

@@ -113,21 +113,29 @@ std::vector<double> DistributeMatrixA(int rank, int size, size_t my_rows, size_t
 std::vector<double> DistributeMatrixB(int rank, int size, size_t m, size_t p, const std::vector<double> &matrix_b) {
   size_t columns_per_proc = p / size;
   size_t extra_columns = p % size;
+
   size_t my_columns = columns_per_proc + (std::cmp_less(rank, extra_columns) ? 1 : 0);
   size_t my_start_columns = (rank * columns_per_proc) + std::min<size_t>(rank, extra_columns);
 
   std::vector<double> local_b(m * my_columns);
 
   if (rank == 0) {
-    for (size_t row = 0; row < m; ++row) {
-      for (size_t column = 0; column < my_columns; ++column) {
-        size_t full_column = my_start_columns + column;
-        local_b[(row * my_columns) + column] = matrix_b[(row * p) + full_column];
+    if (my_columns > 0) {
+      for (size_t row = 0; row < m; ++row) {
+        for (size_t column = 0; column < my_columns; ++column) {
+          size_t full_column = my_start_columns + column;
+          local_b[(row * my_columns) + column] = matrix_b[(row * p) + full_column];
+        }
       }
     }
 
     for (int dest = 1; dest < size; ++dest) {
       size_t dest_columns = columns_per_proc + (std::cmp_less(dest, extra_columns) ? 1 : 0);
+
+      if (dest_columns == 0) {
+        continue;
+      }
+
       size_t dest_start = (dest * columns_per_proc) + std::min<size_t>(dest, extra_columns);
 
       std::vector<double> buffer(m * dest_columns);
@@ -138,10 +146,10 @@ std::vector<double> DistributeMatrixB(int rank, int size, size_t m, size_t p, co
         }
       }
 
-      MPI_Send(buffer.data(), buffer.size(), MPI_DOUBLE, dest, 0, MPI_COMM_WORLD);
+      MPI_Send(buffer.data(), static_cast<int>(buffer.size()), MPI_DOUBLE, dest, 0, MPI_COMM_WORLD);
     }
-  } else {
-    MPI_Recv(local_b.data(), local_b.size(), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  } else if (my_columns > 0) {
+    MPI_Recv(local_b.data(), static_cast<int>(local_b.size()), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
   }
 
   return local_b;
@@ -149,6 +157,10 @@ std::vector<double> DistributeMatrixB(int rank, int size, size_t m, size_t p, co
 
 std::vector<double> LocalMatrixMultiplication(const std::vector<double> &local_a, const std::vector<double> &local_b,
                                               size_t my_rows, size_t m, size_t my_columns) {
+  if (my_rows == 0 || my_columns == 0) {
+    return std::vector<double>();
+  }
+
   std::vector<double> local_c(my_rows * my_columns, 0.0);
 
   for (size_t i = 0; i < my_rows; ++i) {

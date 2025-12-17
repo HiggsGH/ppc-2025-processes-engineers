@@ -115,6 +115,11 @@ std::vector<double> DistributeMatrixB(int rank, int size, size_t m, size_t p, co
   size_t extra_columns = p % size;
 
   size_t my_columns = columns_per_proc + (std::cmp_less(rank, extra_columns) ? 1 : 0);
+
+  if (my_columns == 0) {
+    return std::vector<double>();
+  }
+
   size_t my_start_columns = (rank * columns_per_proc) + std::min<size_t>(rank, extra_columns);
 
   std::vector<double> local_b(m * my_columns);
@@ -178,6 +183,13 @@ std::vector<double> LocalMatrixMultiplication(const std::vector<double> &local_a
 
 void GatherResults(int rank, int size, const std::vector<double> &local_c, size_t my_rows, size_t my_start_row,
                    size_t my_start_column, size_t my_columns, size_t n, size_t p, std::vector<double> &result) {
+  if (my_rows == 0 || my_columns == 0) {
+    if (rank == 0) {
+      result.resize(n * p, 0.0);
+    }
+    return;
+  }
+
   if (rank == 0) {
     result.resize(n * p, 0.0);
 
@@ -192,11 +204,21 @@ void GatherResults(int rank, int size, const std::vector<double> &local_c, size_
       size_t src_rows_per_proc = n / size;
       size_t src_extra_rows = n % size;
       size_t src_rows = src_rows_per_proc + (std::cmp_less(src, src_extra_rows) ? 1 : 0);
+
+      if (src_rows == 0) {
+        continue;
+      }
+
       size_t src_start_row = (src * src_rows_per_proc) + std::min<size_t>(src, src_extra_rows);
 
       size_t src_columns_per_proc = p / size;
       size_t src_extra_columns = p % size;
       size_t src_columns = src_columns_per_proc + (std::cmp_less(src, src_extra_columns) ? 1 : 0);
+
+      if (src_columns == 0) {
+        continue;
+      }
+
       size_t src_start_column = (src * src_columns_per_proc) + std::min<size_t>(src, src_extra_columns);
 
       if (src_rows > 0 && src_columns > 0) {
@@ -274,6 +296,7 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
     if (rank == 0) {
       GetOutput() = std::vector<double>();
     }
+    MPI_Barrier(MPI_COMM_WORLD);
     return true;
   }
 
@@ -281,12 +304,24 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
   size_t extra_rows = 0;
   auto [my_rows, my_start_row] = CalculateRowDistribution(rank, size, n, rows_per_proc, extra_rows);
 
-  auto local_a = DistributeMatrixA(rank, size, my_rows, my_start_row, m, rows_per_proc, extra_rows, matrix_a);
-
   size_t columns_per_proc = p / size;
   size_t extra_columns = p % size;
   size_t my_columns = columns_per_proc + (std::cmp_less(rank, extra_columns) ? 1 : 0);
   size_t my_start_column = (rank * columns_per_proc) + std::min<size_t>(rank, extra_columns);
+
+  if (my_rows == 0 || my_columns == 0) {
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    if (rank == 0) {
+      std::vector<double> result(n * p, 0.0);
+      GetOutput() = result;
+    }
+
+    SynchronizeResult(rank, GetOutput());
+    return true;
+  }
+
+  auto local_a = DistributeMatrixA(rank, size, my_rows, my_start_row, m, rows_per_proc, extra_rows, matrix_a);
 
   auto local_b = DistributeMatrixB(rank, size, m, p, matrix_b);
 

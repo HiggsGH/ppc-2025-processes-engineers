@@ -3,6 +3,7 @@
 #include <mpi.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <tuple>
 #include <utility>
 #include <vector>

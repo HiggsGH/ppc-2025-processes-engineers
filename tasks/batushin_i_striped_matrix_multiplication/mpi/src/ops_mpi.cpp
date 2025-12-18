@@ -52,9 +52,7 @@ bool BatushinIStripedMatrixMultiplicationMPI::PreProcessingImpl() {
 
 namespace {
 
-enum class MPITag : std::uint8_t {
-    kMatrixB = 101
-};
+enum class MPITag : std::uint8_t { kMatrixB = 101 };
 
 std::vector<int> ComputeBlockSizes(int total, int num_procs) {
   std::vector<int> sizes(num_procs, 0);

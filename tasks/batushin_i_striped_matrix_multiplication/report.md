@@ -59,49 +59,33 @@
 
 ## 4. Схема распараллеливания
 
-Параллельная реализация основана на ленточной схеме:
-- **Матрица A** делится горизонтально (по строкам) между процессами
-- **Матрица B** делится вертикально (по столбцам) между процессами
-- Каждый процесс вычисляет часть результирующей матрицы C (пересечение своих строк A и своих столбцов B)
-
-**Стратегия распределения матрицы A по строкам:**
-```cpp
-// Вычисление количества строк матрицы A для каждого процесса
-size_t rows_per_proc = rows_a / size;
-size_t extra_rows = rows_a % size;
-
-// Процессы с rank < extra_rows получают дополнительную строку
-size_t my_rows = rows_per_proc + (rank < extra_rows ? 1 : 0);
-size_t my_start_row = (rank * rows_per_proc) + std::min<size_t>(rank, extra_rows);
-```
-**Стратегия распределения матрицы B по столбцам:**
-```cpp
-// Вычисление количества столбцов матрицы B для каждого процесса
-size_t columns_per_proc = columns_b / size;
-size_t extra_columns = columns_b % size;
-
-// Процессы с rank < extra_columns получают дополнительный столбец
-size_t my_columns = columns_per_proc + (rank < extra_columns ? 1 : 0);
-size_t my_start_column = (rank * columns_per_proc) + std::min<size_t>(rank, extra_columns);
-```
+Параллельная реализация следует ленточной схеме с горизонтальным разбиением матрицы A, но с полным копированием матрицы B на каждый процесс. Это сделано для того, чтобы каждый процесс мог вычислить все столбцы своих строк результата без сложных коммуникационных схем
 
 **Роли процессов**
-- **rank 0:** Координирует выполнение, распределяет части матриц A и B, собирает и синхронизирует результаты
-- **rank 1..P-1:** Получают свои части матриц A и B, выполняют локальное умножение, отправляют результаты обратно
+- **rank 0:**
+  - Инициализирует данные
+  - Рассылает полную матрицу B всем процессам через `MPI_Send`
+  - Распределяет строки матрицы A с помощью `MPI_Scatterv`
+  - Собирает результаты с помощью `MPI_Gatherv`
+  - Рассылает финальную матрицу C всем процессам через `MPI_Bcast`
+- **rank 1..P-1:**
+  - Получают полную копию матрицы B от `rank 0` через `MPI_Recv`
+  - Получают свою горизонтальную полосу строк из матрицы A через `MPI_Scatterv`
+  - Выполняют локальное умножение, вычисляя все столбцы своих строк
+  - Отправляют вычисленные строки результата обратно на `rank 0`
 
 **Схема коммуникации**
-- **Фаза рассылки размеров (MPI_Bcast):** Ведущий процесс рассылает размеры матриц (rows_a, columns_a, rows_b, columns_b) всем процессам
-- **Фаза распределения матрицы A:** Ведущий процесс отправляет каждому процессу его горизонтальную полосу матрицы A
-- **Фаза рассылки матрицы B:** Ведущий процесс отправляет каждому процессу его вертикальную полосу матрицы B
-- **Фаза локальных вычислений:** Каждый процесс вычисляет свою часть матрицы C размера my_rows × my_columns
-- **Фаза сбора результатов:** Все процессы отправляют свои части C ведущему, который собирает полную матрицу с учетом позиций строк и столбцов
-- **Фаза синхронизации (MPI_Bcast):** Ведущий процесс рассылает итоговую матрицу C всем процессам
+- **Рассылка матрицы B:** `rank 0` отправляет полную матрицу B каждому процессу по отдельности с помощью `MPI_Send/MPI_Recv`
+- **Раздача матрицы A:** Используется коллективная операция `MPI_Scatterv` для неравномерного распределения строк матрицы A
+- **Локальные вычисления:** Каждый процесс независимо вычисляет все столбцы своих строк результирующей матрицы C, используя свою часть A и полную B
+- **Сбор результата:** Все процессы отправляют свои строки результата на `rank 0` через `MPI_Gatherv`, который учитывает неравномерное распределение строк
+- **Синхронизация финального результата:** `rank 0` рассылает собранный результат всем процессам через `MPI_Bcast`
 
 **Особенности реализации:**
-- Используется блочное распределение строк A и столбцов B
+- Матрица A разбивается горизонтально с поддержкой неравномерного деления (остаточные строки достаются процессам с меньшим `rank`)
 - Каждый процесс хранит только свою часть матрицы B
-- Каждый процесс вычисляет только часть матрицы C (my_rows × my_columns)
-- Результаты собираются на ведущем процессе с учетом позиций строк и столбцов
+- Матрица B не разбивается — каждый процесс получает полную копию, что упрощает вычисления и гарантирует корректность
+- Реализация устойчива к любым размерам матриц, включая малые (1×1, 4×4) и случаи, когда число строк меньше числа процессов
 
 ## 5. Детали реализации
 
@@ -123,18 +107,13 @@ size_t my_start_column = (rank * columns_per_proc) + std::min<size_t>(rank, extr
 - `PostProcessingImpl()` - завершающая обработка
 
 **Вспомогательные функции:**
-- `CalculateRowDistribution()` - вычисление распределения строк матрицы A
-- `DistributeMatrixA()` - распределение частей матрицы A по процессам
-- `DistributeMatrixB()` - распределение частей матрицы B по столбцам между процессами
-- `LocalMatrixMultiplication()` - локальное умножение частей матриц
-- `GatherResults()` - сбор результатов от всех процессов (с учетом распределения по строкам и столбцам)
-- `SynchronizeResult()` - синхронизация финального результата
+- `compute_block_sizes()` - вычисление количества строк матрицы A, которое получит каждый процесс
+- `compute_block_offsets()` - вычисляет смещения для `MPI_Scatterv` и `MPI_Gatherv`
 
 **Допущения:**
 - Матрица хранится построчно
-- Каждый процесс получает непрерывный блок строк матрицы A
-- Каждый процесс получает непрерывный блок столбцов матрицы B
-- Размеры матриц корректны (N, M, P > 0) и удовлетворяют условию умножения
+- Матрица A разбивается горизонтально: каждый процесс получает непрерывный блок строк
+- Все процессы участвуют в вычислениях, даже при неравномерном распределении строк
 
 **Обрабатываемые граничные случаи:**
 - Матрицы 1×1 (скалярное умножение)
@@ -149,6 +128,7 @@ size_t my_start_column = (rank * columns_per_proc) + std::min<size_t>(rank, extr
 if (columns_a != rows_b) return false;               // несовместимые размеры
 if (matrix_a.size() != rows_a * columns_a) return false; // несоответствие размера A
 if (matrix_b.size() != rows_b * columns_b) return false; // несоответствие размера B
+return GetOutput().empty();                          // защита от повторного запуска
 ```
 
 ## 6. Экспериментальное окружение
@@ -192,18 +172,18 @@ PPC_NUM_PROC=1,2,4
 
 | Версия | Количество процессов | Task Run время |
 |--------|---------------------|----------------|
-| SEQ    | 1                   | 1.1205         |
-| MPI    | 1                   | 1.1744         |
-| MPI    | 2                   | 0.7993         |
-| MPI    | 4                   | 0.6553         |
+| SEQ    | 1                   | 1.2523         |
+| MPI    | 1                   | 1.2023         |
+| MPI    | 2                   | 0.8922         |
+| MPI    | 4                   | 0.7230         |
 
 **Ускорение относительно SEQ версии:**
 
 | Количество процессов | Ускорение | Эффективность |
 |---------------------|-----------|---------------|
-| 1                   | 0.95×     | 95%           |
+| 1                   | 1.04×     | 104%           |
 | 2                   | 1.40×     | 70%           |
-| 4                   | 1.71×     | 43%           |
+| 4                   | 1.73×     | 43%            |
 
 
 **Формула ускорения:** Ускорение = Время SEQ / Время MPI
@@ -212,7 +192,7 @@ PPC_NUM_PROC=1,2,4
 
 ### 7.3. Анализ эффективности
 
-- **Лучшее ускорение:** 1.71× на 4 процессах (Task Run время)
+- **Лучшее ускорение:** 1.73× на 4 процессах (Task Run время)
 - **Оптимальная конфигурация:** 2-4 процесса
 - **Эффективность MPI:** Хорошая при 2 процессах (70%), значительно снижается при 4 процессах (43%)
 
@@ -220,14 +200,14 @@ PPC_NUM_PROC=1,2,4
 
 1. **MPI с 1 процессом** показывает схожую производительность с SEQ версией
 2. **MPI с 2 процессами** демонстрирует значительное ускорение (1.40×) с хорошей эффективностью (70%), что близко к линейному ускорению 
-3. **MPI с 4 процессами** достигает максимального ускорения (1.71×), но эффективность снижается до 43%
+3. **MPI с 4 процессами** достигает максимального ускорения (1.73×), но эффективность снижается до 43%
 
 ## 8. Выводы
 
 ### 8.1. Достигнутые результаты
 
 - **Корректность:** Разработанный алгоритм успешно реализует ленточную схему умножения матриц с горизонтальным распределением A и вертикальным распределением B
-- **Эффективность параллелизации:** Достигнуто ускорение 1.71× на 4 процессах для матриц 1000×1000
+- **Эффективность параллелизации:** Достигнуто ускорение 1.73× на 4 процессах для матриц 1000×1000
 - **Оптимальная конфигурация:** Наилучшая эффективность (70%) достигнута при использовании 2 процессов
 
 ### 8.2. Ограничения и проблемы
@@ -245,256 +225,125 @@ PPC_NUM_PROC=1,2,4
 ```cpp
 namespace {
 
-std::pair<size_t, size_t> CalculateRowDistribution(int rank, int size, size_t n, size_t &rows_per_proc,
-                                                   size_t &extra_rows) {
-  rows_per_proc = n / size;
-  extra_rows = n % size;
+enum MPITags {
+  TAG_MATRIX_B = 101,
+};
 
-  size_t my_rows = rows_per_proc + (std::cmp_less(rank, extra_rows) ? 1 : 0);
-  size_t my_start = (rank * rows_per_proc) + std::min<size_t>(rank, extra_rows);
-
-  return {my_rows, my_start};
+std::vector<int> compute_block_sizes(int total, int num_procs) {
+  std::vector<int> sizes(num_procs, 0);
+  const int block_size = total / num_procs;
+  const int extra = total % num_procs;
+  for (int i = 0; i < num_procs; ++i) {
+    sizes[i] = block_size + (i < extra ? 1 : 0);
+  }
+  return sizes;
 }
 
-void FillLocalPart(size_t my_rows, size_t m, size_t my_start, const std::vector<double> &matrix_a,
-                   std::vector<double> &local_a) {
-  for (size_t i = 0; i < my_rows; ++i) {
-    for (size_t j = 0; j < m; ++j) {
-      local_a[(i * m) + j] = matrix_a[((my_start + i) * m) + j];
-    }
+std::vector<int> compute_block_offsets(const std::vector<int>& sizes) {
+  std::vector<int> offsets(sizes.size(), 0);
+  for (size_t idx = 1; idx < sizes.size(); ++idx) {
+    offsets[idx] = offsets[idx - 1] + sizes[idx - 1];
   }
-}
-
-void FillBufferForProcess(int dest, size_t m, size_t rows_per_proc, size_t extra_rows,
-                          const std::vector<double> &matrix_a, std::vector<double> &buffer) {
-  size_t dest_rows = rows_per_proc + (std::cmp_less(dest, extra_rows) ? 1 : 0);
-  if (dest_rows == 0) {
-    return;
-  }
-
-  size_t dest_start = (dest * rows_per_proc) + std::min<size_t>(dest, extra_rows);
-
-  buffer.resize(dest_rows * m);
-  for (size_t i = 0; i < dest_rows; ++i) {
-    for (size_t j = 0; j < m; ++j) {
-      buffer[(i * m) + j] = matrix_a[((dest_start + i) * m) + j];
-    }
-  }
-}
-
-void SendToProcesses(int size, size_t m, size_t rows_per_proc, size_t extra_rows, const std::vector<double> &matrix_a) {
-  for (int dest = 1; dest < size; ++dest) {
-    std::vector<double> buffer;
-    FillBufferForProcess(dest, m, rows_per_proc, extra_rows, matrix_a, buffer);
-    if (!buffer.empty()) {
-      MPI_Send(buffer.data(), static_cast<int>(buffer.size()), MPI_DOUBLE, dest, 0, MPI_COMM_WORLD);
-    }
-  }
-}
-
-std::vector<double> DistributeMatrixA(int rank, int size, size_t my_rows, size_t my_start, size_t m,
-                                      size_t rows_per_proc, size_t extra_rows, const std::vector<double> &matrix_a) {
-  std::vector<double> local_a(my_rows * m);
-
-  if (rank == 0) {
-    FillLocalPart(my_rows, m, my_start, matrix_a, local_a);
-    SendToProcesses(size, m, rows_per_proc, extra_rows, matrix_a);
-  } else if (my_rows > 0) {
-    MPI_Recv(local_a.data(), static_cast<int>(local_a.size()), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  }
-
-  return local_a;
-}
-
-std::vector<double> DistributeMatrixB(int rank, int size, size_t m, size_t p, const std::vector<double> &matrix_b) {
-  size_t columns_per_proc = p / size;
-  size_t extra_columns = p % size;
-
-  size_t my_columns = columns_per_proc + (std::cmp_less(rank, extra_columns) ? 1 : 0);
-  size_t my_start_columns = (rank * columns_per_proc) + std::min<size_t>(rank, extra_columns);
-
-  std::vector<double> local_b(m * my_columns);
-
-  if (rank == 0) {
-    if (my_columns > 0) {
-      for (size_t row = 0; row < m; ++row) {
-        for (size_t column = 0; column < my_columns; ++column) {
-          size_t full_column = my_start_columns + column;
-          local_b[(row * my_columns) + column] = matrix_b[(row * p) + full_column];
-        }
-      }
-    }
-
-    for (int dest = 1; dest < size; ++dest) {
-      size_t dest_columns = columns_per_proc + (std::cmp_less(dest, extra_columns) ? 1 : 0);
-
-      if (dest_columns == 0) {
-        continue;
-      }
-
-      size_t dest_start = (dest * columns_per_proc) + std::min<size_t>(dest, extra_columns);
-
-      std::vector<double> buffer(m * dest_columns);
-      for (size_t row = 0; row < m; ++row) {
-        for (size_t column = 0; column < dest_columns; ++column) {
-          size_t full_column = dest_start + column;
-          buffer[(row * dest_columns) + column] = matrix_b[(row * p) + full_column];
-        }
-      }
-
-      MPI_Send(buffer.data(), static_cast<int>(buffer.size()), MPI_DOUBLE, dest, 0, MPI_COMM_WORLD);
-    }
-  } else if (my_columns > 0) {
-    MPI_Recv(local_b.data(), static_cast<int>(local_b.size()), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  }
-
-  return local_b;
-}
-
-std::vector<double> LocalMatrixMultiplication(const std::vector<double> &local_a, const std::vector<double> &local_b,
-                                              size_t my_rows, size_t m, size_t my_columns) {
-  if (my_rows == 0 || my_columns == 0) {
-    return std::vector<double>();
-  }
-
-  std::vector<double> local_c(my_rows * my_columns, 0.0);
-
-  for (size_t i = 0; i < my_rows; ++i) {
-    for (size_t j = 0; j < my_columns; ++j) {
-      double sum = 0.0;
-      for (size_t k = 0; k < m; ++k) {
-        sum += local_a[(i * m) + k] * local_b[(k * my_columns) + j];
-      }
-      local_c[(i * my_columns) + j] = sum;
-    }
-  }
-
-  return local_c;
-}
-
-void GatherResults(int rank, int size, const std::vector<double> &local_c, size_t my_rows, size_t my_start_row,
-                   size_t my_start_column, size_t my_columns, size_t n, size_t p, std::vector<double> &result) {
-  if (rank == 0) {
-    result.resize(n * p, 0.0);
-
-    for (size_t i = 0; i < my_rows; ++i) {
-      for (size_t j = 0; j < my_columns; ++j) {
-        size_t full_column = my_start_column + j;
-        result[((my_start_row + i) * p) + full_column] = local_c[(i * my_columns) + j];
-      }
-    }
-
-    for (int src = 1; src < size; ++src) {
-      size_t src_rows_per_proc = n / size;
-      size_t src_extra_rows = n % size;
-      size_t src_rows = src_rows_per_proc + (std::cmp_less(src, src_extra_rows) ? 1 : 0);
-      size_t src_start_row = (src * src_rows_per_proc) + std::min<size_t>(src, src_extra_rows);
-
-      size_t src_columns_per_proc = p / size;
-      size_t src_extra_columns = p % size;
-      size_t src_columns = src_columns_per_proc + (std::cmp_less(src, src_extra_columns) ? 1 : 0);
-      size_t src_start_column = (src * src_columns_per_proc) + std::min<size_t>(src, src_extra_columns);
-
-      if (src_rows > 0 && src_columns > 0) {
-        std::vector<double> buffer(src_rows * src_columns);
-        MPI_Recv(buffer.data(), static_cast<int>(buffer.size()), MPI_DOUBLE, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        for (size_t i = 0; i < src_rows; ++i) {
-          for (size_t j = 0; j < src_columns; ++j) {
-            size_t full_column = src_start_column + j;
-            result[((src_start_row + i) * p) + full_column] = buffer[(i * src_columns) + j];
-          }
-        }
-      }
-    }
-  } else if (my_rows > 0 && my_columns > 0) {
-    MPI_Send(local_c.data(), static_cast<int>(local_c.size()), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-  }
-}
-
-void SynchronizeResult(int rank, std::vector<double> &result) {
-  if (rank == 0) {
-    int result_size = static_cast<int>(result.size());
-
-    MPI_Bcast(&result_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    if (result_size > 0) {
-      MPI_Bcast(result.data(), result_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    }
-  } else {
-    int result_size = 0;
-    MPI_Bcast(&result_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    if (result_size > 0) {
-      result.resize(result_size);
-      MPI_Bcast(result.data(), result_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    } else {
-      result.clear();
-    }
-  }
+  return offsets;
 }
 
 }  // namespace
 
 bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
-  int rank = 0;
-  int size = 0;
-
+  int rank, size;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  const auto &input = GetInput();
-
+  const auto& input = GetInput();
   const size_t rows_a = std::get<0>(input);
-  const size_t columns_a = std::get<1>(input);
-  const auto &matrix_a = std::get<2>(input);
-  const size_t rows_b = std::get<3>(input);
-  const size_t columns_b = std::get<4>(input);
-  const auto &matrix_b = std::get<5>(input);
+  const size_t cols_a = std::get<1>(input);
+  const auto& matrix_a = std::get<2>(input);
+  const size_t cols_b = std::get<4>(input);
+  const auto& matrix_b = std::get<5>(input);
 
-  std::array<uint64_t, 4> dims{};
+  int n = static_cast<int>(rows_a);
+  int m = static_cast<int>(cols_a);
+  int p = static_cast<int>(cols_b);
+
+  std::vector<double> full_b;
   if (rank == 0) {
-    dims[0] = rows_a;
-    dims[1] = columns_a;
-    dims[2] = rows_b;
-    dims[3] = columns_b;
+    full_b = matrix_b;
+  } else {
+    full_b.resize(m * p);
+    MPI_Recv(full_b.data(), m * p, MPI_DOUBLE, 0, TAG_MATRIX_B, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
   }
 
-  MPI_Bcast(dims.data(), 4, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
-
-  const auto n = static_cast<size_t>(dims[0]);
-  const auto m = static_cast<size_t>(dims[1]);
-  const auto p = static_cast<size_t>(dims[3]);
-
-  if (n == 0 || m == 0 || p == 0) {
-    if (rank == 0) {
-      GetOutput() = std::vector<double>();
+  if (rank == 0) {
+    for (int dest = 1; dest < size; ++dest) {
+      MPI_Send(const_cast<double*>(matrix_b.data()), m * p, MPI_DOUBLE, dest, TAG_MATRIX_B, MPI_COMM_WORLD);
     }
-    return true;
   }
 
-  size_t rows_per_proc = 0;
-  size_t extra_rows = 0;
-  auto [my_rows, my_start_row] = CalculateRowDistribution(rank, size, n, rows_per_proc, extra_rows);
+  auto row_counts = compute_block_sizes(n, size);
+  auto row_displs = compute_block_offsets(row_counts);
 
-  auto local_a = DistributeMatrixA(rank, size, my_rows, my_start_row, m, rows_per_proc, extra_rows, matrix_a);
+  int my_rows = row_counts[rank];
+  std::vector<double> local_a;
+  if (my_rows > 0) {
+    local_a.resize(my_rows * m);
+  }
 
-  size_t columns_per_proc = p / size;
-  size_t extra_columns = p % size;
-  size_t my_columns = columns_per_proc + (std::cmp_less(rank, extra_columns) ? 1 : 0);
-  size_t my_start_column = (rank * columns_per_proc) + std::min<size_t>(rank, extra_columns);
+  std::vector<int> sendcounts_a(size), displs_a(size);
+  for (int i = 0; i < size; ++i) {
+    sendcounts_a[i] = row_counts[i] * m;
+    displs_a[i] = row_displs[i] * m;
+  }
 
-  auto local_b = DistributeMatrixB(rank, size, m, p, matrix_b);
+  if (my_rows > 0) {
+    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE,
+                 local_a.data(), my_rows * m, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  } else {
+    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE,
+                 nullptr, 0, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  }
 
-  auto local_c = LocalMatrixMultiplication(local_a, local_b, my_rows, m, my_columns);
+  std::vector<double> local_c;
+  if (my_rows > 0) {
+    local_c.resize(my_rows * p, 0.0);
+    for (int i = 0; i < my_rows; ++i) {
+      for (int j = 0; j < p; ++j) {
+        double sum = 0.0;
+        for (int k = 0; k < m; ++k) {
+          sum += local_a[i * m + k] * full_b[k * p + j];
+        }
+        local_c[i * p + j] = sum;
+      }
+    }
+  }
+
+  std::vector<int> recvcounts(size), recvdispls(size);
+  for (int i = 0; i < size; ++i) {
+    recvcounts[i] = row_counts[i] * p;
+    recvdispls[i] = row_displs[i] * p;
+  }
 
   std::vector<double> result;
-  GatherResults(rank, size, local_c, my_rows, my_start_row, my_start_column, my_columns, n, p, result);
+  if (rank == 0) {
+    result.resize(n * p);
+  }
 
-  SynchronizeResult(rank, result);
+  if (my_rows > 0) {
+    MPI_Gatherv(local_c.data(), my_rows * p, MPI_DOUBLE,
+                result.data(), recvcounts.data(), recvdispls.data(), MPI_DOUBLE,
+                0, MPI_COMM_WORLD);
+  } else {
+    MPI_Gatherv(nullptr, 0, MPI_DOUBLE,
+                result.data(), recvcounts.data(), recvdispls.data(), MPI_DOUBLE,
+                0, MPI_COMM_WORLD);
+  }
 
-  GetOutput() = result;
+  int total_size = n * p;
+  if (rank != 0) {
+    result.resize(total_size);
+  }
+  MPI_Bcast(result.data(), total_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
+  GetOutput() = std::move(result);
   return true;
 }
 ```

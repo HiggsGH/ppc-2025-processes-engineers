@@ -2,9 +2,9 @@
 
 #include <mpi.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "batushin_i_striped_matrix_multiplication/common/include/common.hpp"
@@ -52,11 +52,9 @@ bool BatushinIStripedMatrixMultiplicationMPI::PreProcessingImpl() {
 
 namespace {
 
-enum MPITags {
-  TAG_MATRIX_B = 101,
-};
+enum class MPITag { kMatrixB = 101 };
 
-std::vector<int> compute_block_sizes(int total, int num_procs) {
+std::vector<int> ComputeBlockSizes(int total, int num_procs) {
   std::vector<int> sizes(num_procs, 0);
   const int block_size = total / num_procs;
   const int extra = total % num_procs;
@@ -66,7 +64,7 @@ std::vector<int> compute_block_sizes(int total, int num_procs) {
   return sizes;
 }
 
-std::vector<int> compute_block_offsets(const std::vector<int> &sizes) {
+std::vector<int> ComputeBlockOffsets(const std::vector<int> &sizes) {
   std::vector<int> offsets(sizes.size(), 0);
   for (size_t idx = 1; idx < sizes.size(); ++idx) {
     offsets[idx] = offsets[idx - 1] + sizes[idx - 1];
@@ -74,10 +72,24 @@ std::vector<int> compute_block_offsets(const std::vector<int> &sizes) {
   return offsets;
 }
 
+void PerformLocalMultiplication(const std::vector<double> &local_a, const std::vector<double> &full_b,
+                                std::vector<double> &local_c, int my_rows, int m, int p) {
+  for (int i = 0; i < my_rows; ++i) {
+    for (int j = 0; j < p; ++j) {
+      double sum = 0.0;
+      for (int k = 0; k < m; ++k) {
+        sum += local_a[(i * m) + k] * full_b[(k * p) + j];
+      }
+      local_c[(i * p) + j] = sum;
+    }
+  }
+}
+
 }  // namespace
 
 bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
-  int rank, size;
+  int rank = 0;
+  int size = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
@@ -96,26 +108,29 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
   if (rank == 0) {
     full_b = matrix_b;
   } else {
-    full_b.resize(m * p);
-    MPI_Recv(full_b.data(), m * p, MPI_DOUBLE, 0, TAG_MATRIX_B, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    full_b.resize(static_cast<size_t>(m) * static_cast<size_t>(p));
+    MPI_Recv(full_b.data(), static_cast<int>(full_b.size()), MPI_DOUBLE, 0, static_cast<int>(MPITag::kMatrixB),
+             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
   }
 
   if (rank == 0) {
     for (int dest = 1; dest < size; ++dest) {
-      MPI_Send(const_cast<double *>(matrix_b.data()), m * p, MPI_DOUBLE, dest, TAG_MATRIX_B, MPI_COMM_WORLD);
+      MPI_Send(matrix_b.data(), static_cast<int>(matrix_b.size()), MPI_DOUBLE, dest, static_cast<int>(MPITag::kMatrixB),
+               MPI_COMM_WORLD);
     }
   }
 
-  auto row_counts = compute_block_sizes(n, size);
-  auto row_displs = compute_block_offsets(row_counts);
-
+  auto row_counts = ComputeBlockSizes(n, size);
+  auto row_displs = ComputeBlockOffsets(row_counts);
   int my_rows = row_counts[rank];
+
   std::vector<double> local_a;
   if (my_rows > 0) {
-    local_a.resize(my_rows * m);
+    local_a.resize(static_cast<size_t>(my_rows) * static_cast<size_t>(m));
   }
 
-  std::vector<int> sendcounts_a(size), displs_a(size);
+  std::vector<int> sendcounts_a(size);
+  std::vector<int> displs_a(size);
   for (int i = 0; i < size; ++i) {
     sendcounts_a[i] = row_counts[i] * m;
     displs_a[i] = row_displs[i] * m;
@@ -131,19 +146,12 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
 
   std::vector<double> local_c;
   if (my_rows > 0) {
-    local_c.resize(my_rows * p, 0.0);
-    for (int i = 0; i < my_rows; ++i) {
-      for (int j = 0; j < p; ++j) {
-        double sum = 0.0;
-        for (int k = 0; k < m; ++k) {
-          sum += local_a[i * m + k] * full_b[k * p + j];
-        }
-        local_c[i * p + j] = sum;
-      }
-    }
+    local_c.resize(static_cast<size_t>(my_rows) * static_cast<size_t>(p), 0.0);
+    PerformLocalMultiplication(local_a, full_b, local_c, my_rows, m, p);
   }
 
-  std::vector<int> recvcounts(size), recvdispls(size);
+  std::vector<int> recvcounts(size);
+  std::vector<int> recvdispls(size);
   for (int i = 0; i < size; ++i) {
     recvcounts[i] = row_counts[i] * p;
     recvdispls[i] = row_displs[i] * p;
@@ -151,7 +159,7 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
 
   std::vector<double> result;
   if (rank == 0) {
-    result.resize(n * p);
+    result.resize(static_cast<size_t>(n) * static_cast<size_t>(p));
   }
 
   if (my_rows > 0) {
@@ -164,7 +172,7 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
 
   int total_size = n * p;
   if (rank != 0) {
-    result.resize(total_size);
+    result.resize(static_cast<size_t>(total_size));
   }
   MPI_Bcast(result.data(), total_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 

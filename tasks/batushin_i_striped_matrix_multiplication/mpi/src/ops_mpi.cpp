@@ -99,6 +99,25 @@ bool RunSequentialFallback(int rank, size_t rows_a, size_t cols_a, size_t cols_b
   return true;
 }
 
+void DistributeMatrixAFromRoot(int size, int m, const std::vector<double> &matrix_a, const std::vector<int> &row_counts,
+                               const std::vector<int> &row_displs, std::vector<double> &local_a) {
+  std::vector<int> sendcounts_a(size);
+  std::vector<int> displs_a(size);
+  for (int i = 0; i < size; ++i) {
+    sendcounts_a[i] = row_counts[i] * m;
+    displs_a[i] = row_displs[i] * m;
+  }
+
+  int my_rows = (local_a.empty()) ? 0 : static_cast<int>(local_a.size()) / m;
+  if (my_rows > 0) {
+    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE, local_a.data(), my_rows * m,
+                 MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  } else {
+    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE, nullptr, 0, MPI_DOUBLE, 0,
+                 MPI_COMM_WORLD);
+  }
+}
+
 std::tuple<std::vector<int>, std::vector<int>, std::vector<double>> DistributeMatrixA(
     int rank, int size, int n, int m, const std::vector<double> &matrix_a) {
   auto row_counts = ComputeBlockSizes(n, size);
@@ -110,21 +129,37 @@ std::tuple<std::vector<int>, std::vector<int>, std::vector<double>> DistributeMa
     local_a.resize(static_cast<size_t>(my_rows) * static_cast<size_t>(m));
   }
 
-  std::vector<int> sendcounts_a(size), displs_a(size);
-  for (int i = 0; i < size; ++i) {
-    sendcounts_a[i] = row_counts[i] * m;
-    displs_a[i] = row_displs[i] * m;
-  }
-
-  if (my_rows > 0) {
-    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE, local_a.data(), my_rows * m,
-                 MPI_DOUBLE, 0, MPI_COMM_WORLD);
-  } else {
-    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE, nullptr, 0, MPI_DOUBLE, 0,
-                 MPI_COMM_WORLD);
-  }
-
+  DistributeMatrixAFromRoot(size, m, matrix_a, row_counts, row_displs, local_a);
   return {row_counts, row_displs, local_a};
+}
+
+void DistributeMatrixBFromRoot(int size, int m, int p, const std::vector<double> &matrix_b,
+                               const std::vector<int> &col_counts, const std::vector<int> &col_displs,
+                               std::vector<double> &current_b, int &current_cols) {
+  for (int dest = 0; dest < size; ++dest) {
+    if (col_counts[dest] > 0) {
+      std::vector<double> buf(static_cast<size_t>(m) * static_cast<size_t>(col_counts[dest]));
+      for (int row = 0; row < m; ++row) {
+        for (int col = 0; col < col_counts[dest]; ++col) {
+          int global_col = col_displs[dest] + col;
+          buf[(static_cast<size_t>(row) * static_cast<size_t>(col_counts[dest])) + static_cast<size_t>(col)] =
+              matrix_b[(static_cast<size_t>(row) * static_cast<size_t>(p)) + static_cast<size_t>(global_col)];
+        }
+      }
+      if (dest == 0) {
+        current_b = std::move(buf);
+        current_cols = col_counts[0];
+      } else {
+        MPI_Send(buf.data(), static_cast<int>(buf.size()), MPI_DOUBLE, dest, 100, MPI_COMM_WORLD);
+      }
+    } else {
+      if (dest == 0) {
+        current_cols = 0;
+      } else {
+        MPI_Send(nullptr, 0, MPI_DOUBLE, dest, 100, MPI_COMM_WORLD);
+      }
+    }
+  }
 }
 
 std::tuple<std::vector<int>, std::vector<int>, std::vector<double>, int> DistributeMatrixB(
@@ -136,30 +171,7 @@ std::tuple<std::vector<int>, std::vector<int>, std::vector<double>, int> Distrib
   int current_cols = 0;
 
   if (rank == 0) {
-    for (int dest = 0; dest < size; ++dest) {
-      if (col_counts[dest] > 0) {
-        std::vector<double> buf(static_cast<size_t>(m) * static_cast<size_t>(col_counts[dest]));
-        for (int r = 0; r < m; ++r) {
-          for (int c = 0; c < col_counts[dest]; ++c) {
-            int global_col = col_displs[dest] + c;
-            buf[static_cast<size_t>(r) * static_cast<size_t>(col_counts[dest]) + static_cast<size_t>(c)] =
-                matrix_b[static_cast<size_t>(r) * static_cast<size_t>(p) + static_cast<size_t>(global_col)];
-          }
-        }
-        if (dest == 0) {
-          current_b = std::move(buf);
-          current_cols = col_counts[0];
-        } else {
-          MPI_Send(buf.data(), static_cast<int>(buf.size()), MPI_DOUBLE, dest, 100, MPI_COMM_WORLD);
-        }
-      } else {
-        if (dest == 0) {
-          current_cols = 0;
-        } else {
-          MPI_Send(nullptr, 0, MPI_DOUBLE, dest, 100, MPI_COMM_WORLD);
-        }
-      }
-    }
+    DistributeMatrixBFromRoot(size, m, p, matrix_b, col_counts, col_displs, current_b, current_cols);
   } else {
     if (col_counts[rank] > 0) {
       current_b.resize(static_cast<size_t>(m) * static_cast<size_t>(col_counts[rank]));
@@ -175,6 +187,21 @@ std::tuple<std::vector<int>, std::vector<int>, std::vector<double>, int> Distrib
   return {col_counts, col_displs, current_b, current_cols};
 }
 
+void PerformLocalComputation(int my_rows, int current_cols, int m, int p, int stripe_offset,
+                             const std::vector<double> &local_a, const std::vector<double> &current_b,
+                             std::vector<double> &local_c) {
+  for (int i = 0; i < my_rows; ++i) {
+    for (int j = 0; j < current_cols; ++j) {
+      double sum = 0.0;
+      for (int k = 0; k < m; ++k) {
+        sum += local_a[(static_cast<size_t>(i) * static_cast<size_t>(m)) + static_cast<size_t>(k)] *
+               current_b[static_cast<size_t>(k) + (static_cast<size_t>(j) * static_cast<size_t>(m))];
+      }
+      local_c[(static_cast<size_t>(i) * static_cast<size_t>(p)) + static_cast<size_t>(stripe_offset + j)] = sum;
+    }
+  }
+}
+
 std::vector<double> ComputeWithCyclicShift(int rank, int size, int m, int p, const std::vector<double> &local_a,
                                            std::vector<double> current_b, int current_cols,
                                            const std::vector<int> &col_displs) {
@@ -188,16 +215,7 @@ std::vector<double> ComputeWithCyclicShift(int rank, int size, int m, int p, con
   for (int step = 0; step < size; ++step) {
     if (my_rows > 0 && current_cols > 0 && !current_b.empty()) {
       int stripe_offset = (stripe_owner < static_cast<int>(col_displs.size())) ? col_displs[stripe_owner] : 0;
-      for (int i = 0; i < my_rows; ++i) {
-        for (int j = 0; j < current_cols; ++j) {
-          double sum = 0.0;
-          for (int k = 0; k < m; ++k) {
-            sum += local_a[static_cast<size_t>(i) * static_cast<size_t>(m) + static_cast<size_t>(k)] *
-                   current_b[static_cast<size_t>(k) + static_cast<size_t>(j) * static_cast<size_t>(m)];
-          }
-          local_c[static_cast<size_t>(i) * static_cast<size_t>(p) + static_cast<size_t>(stripe_offset + j)] = sum;
-        }
-      }
+      PerformLocalComputation(my_rows, current_cols, m, p, stripe_offset, local_a, current_b, local_c);
     }
 
     if (step == size - 1) {
@@ -242,7 +260,8 @@ std::vector<double> ComputeWithCyclicShift(int rank, int size, int m, int p, con
 void BroadcastFinalResult(int rank, int size, int n, int p, const std::vector<int> &row_counts,
                           const std::vector<int> &row_displs, const std::vector<double> &local_c,
                           std::vector<double> &result) {
-  std::vector<int> result_counts(size), result_displs(size);
+  std::vector<int> result_counts(size);
+  std::vector<int> result_displs(size);
   for (int i = 0; i < size; ++i) {
     result_counts[i] = row_counts[i] * p;
     result_displs[i] = row_displs[i] * p;
@@ -284,7 +303,8 @@ bool RunStripedScheme(int rank, int size, size_t rows_a, size_t cols_a, size_t c
 }  // namespace
 
 bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
-  int rank, size;
+  int rank = 0;
+  int size = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 

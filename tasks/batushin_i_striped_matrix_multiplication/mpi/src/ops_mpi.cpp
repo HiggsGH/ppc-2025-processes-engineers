@@ -133,19 +133,25 @@ std::tuple<std::vector<int>, std::vector<int>, std::vector<double>> DistributeMa
   return {row_counts, row_displs, local_a};
 }
 
+std::vector<double> ExtractColumnBlock(int m, int p, int dest_col_start, int dest_col_count,
+                                       const std::vector<double> &matrix_b) {
+  std::vector<double> buf(static_cast<size_t>(m) * static_cast<size_t>(dest_col_count));
+  for (int row = 0; row < m; ++row) {
+    for (int col = 0; col < dest_col_count; ++col) {
+      int global_col = dest_col_start + col;
+      buf[static_cast<size_t>(row) * static_cast<size_t>(dest_col_count) + static_cast<size_t>(col)] =
+          matrix_b[static_cast<size_t>(row) * static_cast<size_t>(p) + static_cast<size_t>(global_col)];
+    }
+  }
+  return buf;
+}
+
 void DistributeMatrixBFromRoot(int size, int m, int p, const std::vector<double> &matrix_b,
                                const std::vector<int> &col_counts, const std::vector<int> &col_displs,
                                std::vector<double> &current_b, int &current_cols) {
   for (int dest = 0; dest < size; ++dest) {
     if (col_counts[dest] > 0) {
-      std::vector<double> buf(static_cast<size_t>(m) * static_cast<size_t>(col_counts[dest]));
-      for (int row = 0; row < m; ++row) {
-        for (int col = 0; col < col_counts[dest]; ++col) {
-          int global_col = col_displs[dest] + col;
-          buf[(static_cast<size_t>(row) * static_cast<size_t>(col_counts[dest])) + static_cast<size_t>(col)] =
-              matrix_b[(static_cast<size_t>(row) * static_cast<size_t>(p)) + static_cast<size_t>(global_col)];
-        }
-      }
+      std::vector<double> buf = ExtractColumnBlock(m, p, col_displs[dest], col_counts[dest], matrix_b);
       if (dest == 0) {
         current_b = std::move(buf);
         current_cols = col_counts[0];
@@ -202,6 +208,35 @@ void PerformLocalComputation(int my_rows, int current_cols, int m, int p, int st
   }
 }
 
+std::pair<std::vector<double>, int> ShiftMatrixB(int rank, int size, int m, std::vector<double> &current_b,
+                                                 int current_cols) {
+  int next = (rank + 1) % size;
+  int prev = (rank - 1 + size) % size;
+
+  int send_cols = current_cols;
+  int recv_cols = 0;
+  MPI_Sendrecv(&send_cols, 1, MPI_INT, next, 200, &recv_cols, 1, MPI_INT, prev, 200, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  std::vector<double> recv_buffer;
+  if (recv_cols > 0) {
+    recv_buffer.resize(static_cast<size_t>(m) * static_cast<size_t>(recv_cols));
+  }
+
+  int send_count = send_cols * m;
+  int recv_count = recv_cols * m;
+  const double *send_ptr = (send_count > 0 && !current_b.empty()) ? current_b.data() : nullptr;
+  double *recv_ptr = (recv_count > 0) ? recv_buffer.data() : nullptr;
+
+  MPI_Sendrecv(send_ptr, send_count, MPI_DOUBLE, next, 201, recv_ptr, recv_count, MPI_DOUBLE, prev, 201, MPI_COMM_WORLD,
+               MPI_STATUS_IGNORE);
+
+  if (recv_cols > 0) {
+    return {std::move(recv_buffer), recv_cols};
+  } else {
+    return {{}, 0};
+  }
+}
+
 std::vector<double> ComputeWithCyclicShift(int rank, int size, int m, int p, const std::vector<double> &local_a,
                                            std::vector<double> current_b, int current_cols,
                                            const std::vector<int> &col_displs) {
@@ -214,7 +249,7 @@ std::vector<double> ComputeWithCyclicShift(int rank, int size, int m, int p, con
   int stripe_owner = rank;
   for (int step = 0; step < size; ++step) {
     if (my_rows > 0 && current_cols > 0 && !current_b.empty()) {
-      int stripe_offset = (stripe_owner < static_cast<int>(col_displs.size())) ? col_displs[stripe_owner] : 0;
+      int stripe_offset = (static_cast<size_t>(stripe_owner) < col_displs.size()) ? col_displs[stripe_owner] : 0;
       PerformLocalComputation(my_rows, current_cols, m, p, stripe_offset, local_a, current_b, local_c);
     }
 
@@ -222,35 +257,9 @@ std::vector<double> ComputeWithCyclicShift(int rank, int size, int m, int p, con
       break;
     }
 
-    int next = (rank + 1) % size;
-    int prev = (rank - 1 + size) % size;
-
-    int send_cols = current_cols;
-    int recv_cols = 0;
-    MPI_Sendrecv(&send_cols, 1, MPI_INT, next, 200, &recv_cols, 1, MPI_INT, prev, 200, MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
-
-    std::vector<double> recv_buffer;
-    if (recv_cols > 0) {
-      recv_buffer.resize(static_cast<size_t>(m) * static_cast<size_t>(recv_cols));
-    }
-
-    int send_count = send_cols * m;
-    int recv_count = recv_cols * m;
-    const double *send_ptr = (send_count > 0 && !current_b.empty()) ? current_b.data() : nullptr;
-    double *recv_ptr = (recv_count > 0) ? recv_buffer.data() : nullptr;
-
-    MPI_Sendrecv(send_ptr, send_count, MPI_DOUBLE, next, 201, recv_ptr, recv_count, MPI_DOUBLE, prev, 201,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    if (recv_cols > 0) {
-      current_b = std::move(recv_buffer);
-      current_cols = recv_cols;
-    } else {
-      current_b.clear();
-      current_cols = 0;
-    }
-
+    auto [new_b, new_cols] = ShiftMatrixB(rank, size, m, current_b, current_cols);
+    current_b = std::move(new_b);
+    current_cols = new_cols;
     stripe_owner = (stripe_owner - 1 + size) % size;
   }
 
@@ -317,7 +326,7 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
 
   std::vector<double> output;
 
-  if (static_cast<size_t>(size) > rows_a || static_cast<size_t>(size) > cols_b || size <= 4) {
+  if (size > static_cast<int>(rows_a) || size > static_cast<int>(cols_b) || size <= 4) {
     RunSequentialFallback(rank, rows_a, cols_a, cols_b, matrix_a, matrix_b, output);
   } else {
     RunStripedScheme(rank, size, rows_a, cols_a, cols_b, matrix_a, matrix_b, output);

@@ -65,7 +65,7 @@ std::vector<int> ComputeBlockSizes(int total, int num_procs) {
   return sizes;
 }
 
-std::vector<int> ComputeBlockOffsets(const std::vector<int>& sizes) {
+std::vector<int> ComputeBlockOffsets(const std::vector<int> &sizes) {
   std::vector<int> offsets(sizes.size(), 0);
   for (size_t i = 1; i < sizes.size(); ++i) {
     offsets[i] = offsets[i - 1] + sizes[i - 1];
@@ -73,9 +73,8 @@ std::vector<int> ComputeBlockOffsets(const std::vector<int>& sizes) {
   return offsets;
 }
 
-bool RunSequentialFallback(int rank, size_t rows_a, size_t cols_a, size_t cols_b,
-                           const std::vector<double>& matrix_a, const std::vector<double>& matrix_b,
-                           std::vector<double>& output) {
+bool RunSequentialFallback(int rank, size_t rows_a, size_t cols_a, size_t cols_b, const std::vector<double> &matrix_a,
+                           const std::vector<double> &matrix_b, std::vector<double> &output) {
   if (rank == 0) {
     output.resize(rows_a * cols_b, 0.0);
     for (size_t i = 0; i < rows_a; ++i) {
@@ -100,8 +99,8 @@ bool RunSequentialFallback(int rank, size_t rows_a, size_t cols_a, size_t cols_b
   return true;
 }
 
-std::tuple<std::vector<int>, std::vector<int>, std::vector<double>>
-DistributeMatrixA(int rank, int size, int n, int m, const std::vector<double>& matrix_a) {
+std::tuple<std::vector<int>, std::vector<int>, std::vector<double>> DistributeMatrixA(
+    int rank, int size, int n, int m, const std::vector<double> &matrix_a) {
   auto row_counts = ComputeBlockSizes(n, size);
   auto row_displs = ComputeBlockOffsets(row_counts);
   int my_rows = row_counts[rank];
@@ -118,18 +117,18 @@ DistributeMatrixA(int rank, int size, int n, int m, const std::vector<double>& m
   }
 
   if (my_rows > 0) {
-    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE,
-                 local_a.data(), my_rows * m, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE, local_a.data(), my_rows * m,
+                 MPI_DOUBLE, 0, MPI_COMM_WORLD);
   } else {
-    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE,
-                 nullptr, 0, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(matrix_a.data(), sendcounts_a.data(), displs_a.data(), MPI_DOUBLE, nullptr, 0, MPI_DOUBLE, 0,
+                 MPI_COMM_WORLD);
   }
 
   return {row_counts, row_displs, local_a};
 }
 
-std::tuple<std::vector<int>, std::vector<int>, std::vector<double>, int>
-DistributeMatrixB(int rank, int size, int m, int p, const std::vector<double>& matrix_b) {
+std::tuple<std::vector<int>, std::vector<int>, std::vector<double>, int> DistributeMatrixB(
+    int rank, int size, int m, int p, const std::vector<double> &matrix_b) {
   auto col_counts = ComputeBlockSizes(p, size);
   auto col_displs = ComputeBlockOffsets(col_counts);
 
@@ -164,7 +163,8 @@ DistributeMatrixB(int rank, int size, int m, int p, const std::vector<double>& m
   } else {
     if (col_counts[rank] > 0) {
       current_b.resize(static_cast<size_t>(m) * static_cast<size_t>(col_counts[rank]));
-      MPI_Recv(current_b.data(), static_cast<int>(current_b.size()), MPI_DOUBLE, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(current_b.data(), static_cast<int>(current_b.size()), MPI_DOUBLE, 0, 100, MPI_COMM_WORLD,
+               MPI_STATUS_IGNORE);
       current_cols = col_counts[rank];
     } else {
       MPI_Recv(nullptr, 0, MPI_DOUBLE, 0, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -175,12 +175,9 @@ DistributeMatrixB(int rank, int size, int m, int p, const std::vector<double>& m
   return {col_counts, col_displs, current_b, current_cols};
 }
 
-std::vector<double> ComputeWithCyclicShift(
-    int rank, int size, int m, int p,
-    const std::vector<double>& local_a,
-    std::vector<double> current_b, int current_cols,
-    const std::vector<int>& col_displs) {
-  
+std::vector<double> ComputeWithCyclicShift(int rank, int size, int m, int p, const std::vector<double> &local_a,
+                                           std::vector<double> current_b, int current_cols,
+                                           const std::vector<int> &col_displs) {
   int my_rows = (local_a.empty()) ? 0 : static_cast<int>(local_a.size()) / m;
   std::vector<double> local_c;
   if (my_rows > 0) {
@@ -203,16 +200,17 @@ std::vector<double> ComputeWithCyclicShift(
       }
     }
 
-    if (step == size - 1) break;
+    if (step == size - 1) {
+      break;
+    }
 
     int next = (rank + 1) % size;
     int prev = (rank - 1 + size) % size;
 
     int send_cols = current_cols;
     int recv_cols = 0;
-    MPI_Sendrecv(&send_cols, 1, MPI_INT, next, 200,
-                 &recv_cols, 1, MPI_INT, prev, 200,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Sendrecv(&send_cols, 1, MPI_INT, next, 200, &recv_cols, 1, MPI_INT, prev, 200, MPI_COMM_WORLD,
+                 MPI_STATUS_IGNORE);
 
     std::vector<double> recv_buffer;
     if (recv_cols > 0) {
@@ -221,11 +219,10 @@ std::vector<double> ComputeWithCyclicShift(
 
     int send_count = send_cols * m;
     int recv_count = recv_cols * m;
-    const double* send_ptr = (send_count > 0 && !current_b.empty()) ? current_b.data() : nullptr;
-    double* recv_ptr = (recv_count > 0) ? recv_buffer.data() : nullptr;
+    const double *send_ptr = (send_count > 0 && !current_b.empty()) ? current_b.data() : nullptr;
+    double *recv_ptr = (recv_count > 0) ? recv_buffer.data() : nullptr;
 
-    MPI_Sendrecv(send_ptr, send_count, MPI_DOUBLE, next, 201,
-                 recv_ptr, recv_count, MPI_DOUBLE, prev, 201,
+    MPI_Sendrecv(send_ptr, send_count, MPI_DOUBLE, next, 201, recv_ptr, recv_count, MPI_DOUBLE, prev, 201,
                  MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     if (recv_cols > 0) {
@@ -242,11 +239,9 @@ std::vector<double> ComputeWithCyclicShift(
   return local_c;
 }
 
-void BroadcastFinalResult(int rank, int size, int n, int p,
-                          const std::vector<int>& row_counts,
-                          const std::vector<int>& row_displs,
-                          const std::vector<double>& local_c,
-                          std::vector<double>& result) {
+void BroadcastFinalResult(int rank, int size, int n, int p, const std::vector<int> &row_counts,
+                          const std::vector<int> &row_displs, const std::vector<double> &local_c,
+                          std::vector<double> &result) {
   std::vector<int> result_counts(size), result_displs(size);
   for (int i = 0; i < size; ++i) {
     result_counts[i] = row_counts[i] * p;
@@ -259,11 +254,10 @@ void BroadcastFinalResult(int rank, int size, int n, int p,
 
   int my_rows = (local_c.empty()) ? 0 : static_cast<int>(local_c.size()) / p;
   int local_result_elements = my_rows * p;
-  const double* local_result_ptr = (my_rows > 0) ? local_c.data() : nullptr;
+  const double *local_result_ptr = (my_rows > 0) ? local_c.data() : nullptr;
 
-  MPI_Gatherv(local_result_ptr, local_result_elements, MPI_DOUBLE,
-              result.data(), result_counts.data(), result_displs.data(),
-              MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Gatherv(local_result_ptr, local_result_elements, MPI_DOUBLE, result.data(), result_counts.data(),
+              result_displs.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
   int total_size = n * p;
   if (rank != 0) {
@@ -273,8 +267,8 @@ void BroadcastFinalResult(int rank, int size, int n, int p,
 }
 
 bool RunStripedScheme(int rank, int size, size_t rows_a, size_t cols_a, size_t cols_b,
-                      const std::vector<double>& matrix_a, const std::vector<double>& matrix_b,
-                      std::vector<double>& output) {
+                      const std::vector<double> &matrix_a, const std::vector<double> &matrix_b,
+                      std::vector<double> &output) {
   const int n = static_cast<int>(rows_a);
   const int m = static_cast<int>(cols_a);
   const int p = static_cast<int>(cols_b);
@@ -294,12 +288,12 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  const auto& input = GetInput();
+  const auto &input = GetInput();
   const size_t rows_a = std::get<0>(input);
   const size_t cols_a = std::get<1>(input);
-  const auto& matrix_a = std::get<2>(input);
+  const auto &matrix_a = std::get<2>(input);
   const size_t cols_b = std::get<4>(input);
-  const auto& matrix_b = std::get<5>(input);
+  const auto &matrix_b = std::get<5>(input);
 
   std::vector<double> output;
 

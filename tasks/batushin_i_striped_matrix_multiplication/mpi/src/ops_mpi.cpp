@@ -139,8 +139,8 @@ std::vector<double> ExtractColumnBlock(int m, int p, int dest_col_start, int des
   for (int row = 0; row < m; ++row) {
     for (int col = 0; col < dest_col_count; ++col) {
       int global_col = dest_col_start + col;
-      buf[static_cast<size_t>(row) * static_cast<size_t>(dest_col_count) + static_cast<size_t>(col)] =
-          matrix_b[static_cast<size_t>(row) * static_cast<size_t>(p) + static_cast<size_t>(global_col)];
+      buf[(static_cast<size_t>(row) * static_cast<size_t>(dest_col_count)) + static_cast<size_t>(col)] =
+          matrix_b[(static_cast<size_t>(row) * static_cast<size_t>(p)) + static_cast<size_t>(global_col)];
     }
   }
   return buf;
@@ -232,9 +232,8 @@ std::pair<std::vector<double>, int> ShiftMatrixB(int rank, int size, int m, std:
 
   if (recv_cols > 0) {
     return {std::move(recv_buffer), recv_cols};
-  } else {
-    return {{}, 0};
   }
+  return {{}, 0};
 }
 
 std::vector<double> ComputeWithCyclicShift(int rank, int size, int m, int p, const std::vector<double> &local_a,
@@ -326,7 +325,7 @@ bool BatushinIStripedMatrixMultiplicationMPI::RunImpl() {
 
   std::vector<double> output;
 
-  if (size > static_cast<int>(rows_a) || size > static_cast<int>(cols_b) || size <= 4) {
+  if (std::cmp_greater(size, rows_a) || std::cmp_greater(size, cols_b) || size <= 4) {
     RunSequentialFallback(rank, rows_a, cols_a, cols_b, matrix_a, matrix_b, output);
   } else {
     RunStripedScheme(rank, size, rows_a, cols_a, cols_b, matrix_a, matrix_b, output);

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <vector>
 
 #include "batushin_i_quick_sort_with_simple_merge/common/include/common.hpp"
@@ -29,7 +30,7 @@ class BatushinIQuickSortWithSimpleMergePerfTests : public ppc::util::BaseRunPerf
 
     input_data_ = data;
     expected_result_ = data;
-    std::sort(expected_result_.begin(), expected_result_.end(), std::less<int>());
+    std::ranges::sort(expected_result_, std::less<>());
   }
 
   bool CheckTestOutputData(OutType &output_data) final {

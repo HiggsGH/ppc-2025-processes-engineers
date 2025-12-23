@@ -3,6 +3,7 @@
 #include <mpi.h>
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
 #include <stack>
 #include <utility>
@@ -79,7 +80,8 @@ void IterativeQuickSort(std::vector<int> &data) {
 
   const int threshold = 16;
   struct Segment {
-    int begin, end;
+    int begin;
+    int end;
   };
   std::stack<Segment> stk;
   stk.push({0, static_cast<int>(data.size() - 1)});
@@ -96,7 +98,8 @@ void IterativeQuickSort(std::vector<int> &data) {
       continue;
     }
 
-    int left_end, right_begin;
+    int left_end = 0;
+    int right_begin = 0;
     PartitionArray(data, seg.begin, seg.end, left_end, right_begin);
 
     if (seg.begin <= left_end) {
@@ -155,9 +158,7 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
     } else {
       std::vector<int> merged;
       merged.reserve(result.size() + block.size());
-      std::merge<std::vector<int>::const_iterator, std::vector<int>::const_iterator,
-                 std::back_insert_iterator<std::vector<int>>>(result.begin(), result.end(), block.begin(), block.end(),
-                                                              std::back_inserter(merged));
+      std::ranges::merge(result, block, std::back_inserter(merged));
       result = std::move(merged);
     }
   }

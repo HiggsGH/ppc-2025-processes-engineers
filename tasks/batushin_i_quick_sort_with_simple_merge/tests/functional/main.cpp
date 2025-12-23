@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -50,7 +51,7 @@ InType CreateInput(std::vector<int> data) {
 
 std::vector<int> SortedCopy(const std::vector<int> &v) {
   auto res = v;
-  std::sort(res.begin(), res.end(), std::less<int>());
+  std::ranges::sort(res, std::less<>());
   return res;
 }
 

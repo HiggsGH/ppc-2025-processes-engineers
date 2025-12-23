@@ -3,8 +3,8 @@
 #include <mpi.h>
 
 #include <algorithm>
+#include <iterator>
 #include <stack>
-#include <utility>
 #include <vector>
 
 #include "batushin_i_quick_sort_with_simple_merge/common/include/common.hpp"
@@ -18,7 +18,7 @@ BatushinIQuickSortWithSimpleMergeMPI::BatushinIQuickSortWithSimpleMergeMPI(const
 }
 
 bool BatushinIQuickSortWithSimpleMergeMPI::ValidationImpl() {
-  int initialized;
+  int initialized = 0;
   MPI_Initialized(&initialized);
   return initialized != 0;
 }
@@ -29,16 +29,27 @@ bool BatushinIQuickSortWithSimpleMergeMPI::PreProcessingImpl() {
 
 namespace {
 
-void IterativeQuickSort(std::vector<int> &data) {
+// Простая сортировка без сложной логики
+void sortSmallArray(std::vector<int> &data, int begin, int end) {
+  for (int i = begin + 1; i <= end; ++i) {
+    int key = data[i];
+    int j = i - 1;
+    while (j >= begin && data[j] > key) {
+      data[j + 1] = data[j];
+      --j;
+    }
+    data[j + 1] = key;
+  }
+}
+
+void iterativeQuickSort(std::vector<int> &data) {
   if (data.size() <= 1) {
     return;
   }
 
   const int threshold = 16;
-
   struct Segment {
-    int begin;
-    int end;
+    int begin, end;
   };
   std::stack<Segment> stk;
   stk.push({0, static_cast<int>(data.size() - 1)});
@@ -51,15 +62,7 @@ void IterativeQuickSort(std::vector<int> &data) {
     }
 
     if (seg.end - seg.begin + 1 <= threshold) {
-      for (int i = seg.begin + 1; i <= seg.end; ++i) {
-        int key = data[i];
-        int j = i - 1;
-        while (j >= seg.begin && data[j] > key) {
-          data[j + 1] = data[j];
-          --j;
-        }
-        data[j + 1] = key;
-      }
+      sortSmallArray(data, seg.begin, seg.end);
       continue;
     }
 
@@ -67,29 +70,32 @@ void IterativeQuickSort(std::vector<int> &data) {
     std::swap(data[mid], data[seg.begin]);
     int pivot = data[seg.begin];
 
-    int i = seg.begin - 1;
-    int j = seg.end + 1;
-    while (true) {
-      ++i;
+    int i = seg.begin;
+    int j = seg.end;
+    while (i <= j) {
       while (data[i] < pivot) {
         ++i;
       }
-      --j;
       while (data[j] > pivot) {
         --j;
       }
-      if (i >= j) {
-        break;
+      if (i <= j) {
+        std::swap(data[i], data[j]);
+        ++i;
+        --j;
       }
-      std::swap(data[i], data[j]);
     }
 
-    stk.push({seg.begin, j});
-    stk.push({j + 1, seg.end});
+    if (seg.begin < j) {
+      stk.push({seg.begin, j});
+    }
+    if (i < seg.end) {
+      stk.push({i, seg.end});
+    }
   }
 }
 
-std::pair<int, int> ComputeLocalRange(int rank, int size, int total) {
+std::pair<int, int> computeLocalRange(int rank, int size, int total) {
   int base = total / size;
   int extra = total % size;
   int start = (rank * base) + std::min(rank, extra);
@@ -97,47 +103,50 @@ std::pair<int, int> ComputeLocalRange(int rank, int size, int total) {
   return {start, end};
 }
 
-std::vector<int> CentralizedMerge(int rank, int size, const std::vector<int> &local_data) {
-  if (rank == 0) {
-    std::vector<std::vector<int>> all_blocks(size);
-    if (!local_data.empty()) {
-      all_blocks[0].reserve(local_data.size());
-      all_blocks[0].insert(all_blocks[0].end(), local_data.begin(), local_data.end());
-    }
-
-    for (int src = 1; src < size; ++src) {
-      int count = 0;
-      MPI_Recv(&count, 1, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      if (count > 0) {
-        all_blocks[src].resize(count);
-        MPI_Recv(all_blocks[src].data(), count, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      }
-    }
-
-    std::vector<int> result;
-    for (const auto &block : all_blocks) {
-      if (!block.empty()) {
-        if (result.empty()) {
-          result.reserve(block.size());
-          result.insert(result.end(), block.begin(), block.end());
-        } else {
-          std::vector<int> tmp;
-          tmp.reserve(result.size() + block.size());
-          std::merge(result.begin(), result.end(), block.begin(), block.end(), std::back_inserter(tmp));
-          result = std::move(tmp);
-        }
-      }
-    }
-    return result;
-
-  } else {
+std::vector<int> gatherAndMerge(int rank, int size, const std::vector<int> &local_data) {
+  if (rank != 0) {
     int count = static_cast<int>(local_data.size());
     MPI_Send(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
     if (count > 0) {
-      MPI_Send(local_data.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      std::vector<int> send_buffer(local_data);
+      MPI_Send(send_buffer.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
     return {};
   }
+
+  std::vector<std::vector<int>> all_blocks;
+  all_blocks.reserve(size);
+
+  all_blocks.emplace_back();
+  if (!local_data.empty()) {
+    all_blocks.back().assign(local_data.begin(), local_data.end());
+  }
+
+  for (int src = 1; src < size; ++src) {
+    int count = 0;
+    MPI_Recv(&count, 1, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    all_blocks.emplace_back();
+    if (count > 0) {
+      all_blocks.back().resize(count);
+      MPI_Recv(all_blocks.back().data(), count, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+  }
+
+  std::vector<int> result;
+  for (const auto &block : all_blocks) {
+    if (block.empty()) {
+      continue;
+    }
+    if (result.empty()) {
+      result = block;
+    } else {
+      std::vector<int> merged;
+      merged.reserve(result.size() + block.size());
+      std::merge(result.begin(), result.end(), block.begin(), block.end(), std::back_inserter(merged));
+      result = std::move(merged);
+    }
+  }
+  return result;
 }
 
 }  // namespace
@@ -158,10 +167,13 @@ bool BatushinIQuickSortWithSimpleMergeMPI::RunImpl() {
     return true;
   }
 
-  auto [local_start, local_end] = ComputeLocalRange(rank, size, total_size);
+  auto [local_start, local_end] = computeLocalRange(rank, size, total_size);
   int local_count = (local_start <= local_end) ? (local_end - local_start + 1) : 0;
 
-  std::vector<int> local_data(local_count, 0);
+  std::vector<int> local_data;
+  if (local_count > 0) {
+    local_data.resize(local_count);
+  }
 
   if (rank == 0) {
     if (local_count > 0) {
@@ -169,10 +181,11 @@ bool BatushinIQuickSortWithSimpleMergeMPI::RunImpl() {
                 local_data.begin());
     }
     for (int proc_rank = 1; proc_rank < size; ++proc_rank) {
-      auto [s, e] = ComputeLocalRange(proc_rank, size, total_size);
+      auto [s, e] = computeLocalRange(proc_rank, size, total_size);
       int cnt = (s <= e) ? (e - s + 1) : 0;
       if (cnt > 0) {
-        MPI_Send(const_cast<int *>(global_input.data() + s), cnt, MPI_INT, proc_rank, 0, MPI_COMM_WORLD);
+        std::vector<int> send_buffer(global_input.begin() + s, global_input.begin() + s + cnt);
+        MPI_Send(send_buffer.data(), cnt, MPI_INT, proc_rank, 0, MPI_COMM_WORLD);
       }
     }
   } else {
@@ -181,9 +194,9 @@ bool BatushinIQuickSortWithSimpleMergeMPI::RunImpl() {
     }
   }
 
-  IterativeQuickSort(local_data);
+  iterativeQuickSort(local_data);
 
-  std::vector<int> result = CentralizedMerge(rank, size, local_data);
+  std::vector<int> result = gatherAndMerge(rank, size, local_data);
 
   int result_size = 0;
   if (rank == 0) {

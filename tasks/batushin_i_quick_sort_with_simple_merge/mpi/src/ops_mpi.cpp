@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iterator>
 #include <stack>
+#include <utility>
 #include <vector>
 
 #include "batushin_i_quick_sort_with_simple_merge/common/include/common.hpp"
@@ -29,8 +30,7 @@ bool BatushinIQuickSortWithSimpleMergeMPI::PreProcessingImpl() {
 
 namespace {
 
-// Простая сортировка без сложной логики
-void sortSmallArray(std::vector<int> &data, int begin, int end) {
+void SortSmallArray(std::vector<int> &data, int begin, int end) {
   for (int i = begin + 1; i <= end; ++i) {
     int key = data[i];
     int j = i - 1;
@@ -42,7 +42,37 @@ void sortSmallArray(std::vector<int> &data, int begin, int end) {
   }
 }
 
-void iterativeQuickSort(std::vector<int> &data) {
+void PartitionArray(std::vector<int> &data, int begin, int end, int &left_end, int &right_begin) {
+  if (begin >= end) {
+    left_end = begin - 1;
+    right_begin = end + 1;
+    return;
+  }
+
+  int mid = begin + ((end - begin) / 2);
+  std::swap(data[mid], data[begin]);
+  int pivot = data[begin];
+
+  int i = begin;
+  int j = end;
+  while (i <= j) {
+    while (data[i] < pivot) {
+      ++i;
+    }
+    while (data[j] > pivot) {
+      --j;
+    }
+    if (i <= j) {
+      std::swap(data[i], data[j]);
+      ++i;
+      --j;
+    }
+  }
+  left_end = j;
+  right_begin = i;
+}
+
+void IterativeQuickSort(std::vector<int> &data) {
   if (data.size() <= 1) {
     return;
   }
@@ -62,48 +92,31 @@ void iterativeQuickSort(std::vector<int> &data) {
     }
 
     if (seg.end - seg.begin + 1 <= threshold) {
-      sortSmallArray(data, seg.begin, seg.end);
+      SortSmallArray(data, seg.begin, seg.end);
       continue;
     }
 
-    int mid = seg.begin + ((seg.end - seg.begin) / 2);
-    std::swap(data[mid], data[seg.begin]);
-    int pivot = data[seg.begin];
+    int left_end, right_begin;
+    PartitionArray(data, seg.begin, seg.end, left_end, right_begin);
 
-    int i = seg.begin;
-    int j = seg.end;
-    while (i <= j) {
-      while (data[i] < pivot) {
-        ++i;
-      }
-      while (data[j] > pivot) {
-        --j;
-      }
-      if (i <= j) {
-        std::swap(data[i], data[j]);
-        ++i;
-        --j;
-      }
+    if (seg.begin <= left_end) {
+      stk.push({seg.begin, left_end});
     }
-
-    if (seg.begin < j) {
-      stk.push({seg.begin, j});
-    }
-    if (i < seg.end) {
-      stk.push({i, seg.end});
+    if (right_begin <= seg.end) {
+      stk.push({right_begin, seg.end});
     }
   }
 }
 
-std::pair<int, int> computeLocalRange(int rank, int size, int total) {
+std::pair<int, int> ComputeLocalRange(int rank, int size, int total) {
   int base = total / size;
   int extra = total % size;
   int start = (rank * base) + std::min(rank, extra);
   int end = start + base + (rank < extra ? 1 : 0) - 1;
-  return {start, end};
+  return std::make_pair(start, end);
 }
 
-std::vector<int> gatherAndMerge(int rank, int size, const std::vector<int> &local_data) {
+std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &local_data) {
   if (rank != 0) {
     int count = static_cast<int>(local_data.size());
     MPI_Send(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
@@ -142,7 +155,9 @@ std::vector<int> gatherAndMerge(int rank, int size, const std::vector<int> &loca
     } else {
       std::vector<int> merged;
       merged.reserve(result.size() + block.size());
-      std::merge(result.begin(), result.end(), block.begin(), block.end(), std::back_inserter(merged));
+      std::merge<std::vector<int>::const_iterator, std::vector<int>::const_iterator,
+                 std::back_insert_iterator<std::vector<int>>>(result.begin(), result.end(), block.begin(), block.end(),
+                                                              std::back_inserter(merged));
       result = std::move(merged);
     }
   }
@@ -167,7 +182,9 @@ bool BatushinIQuickSortWithSimpleMergeMPI::RunImpl() {
     return true;
   }
 
-  auto [local_start, local_end] = computeLocalRange(rank, size, total_size);
+  std::pair<int, int> range = ComputeLocalRange(rank, size, total_size);
+  int local_start = range.first;
+  int local_end = range.second;
   int local_count = (local_start <= local_end) ? (local_end - local_start + 1) : 0;
 
   std::vector<int> local_data;
@@ -181,7 +198,9 @@ bool BatushinIQuickSortWithSimpleMergeMPI::RunImpl() {
                 local_data.begin());
     }
     for (int proc_rank = 1; proc_rank < size; ++proc_rank) {
-      auto [s, e] = computeLocalRange(proc_rank, size, total_size);
+      std::pair<int, int> proc_range = ComputeLocalRange(proc_rank, size, total_size);
+      int s = proc_range.first;
+      int e = proc_range.second;
       int cnt = (s <= e) ? (e - s + 1) : 0;
       if (cnt > 0) {
         std::vector<int> send_buffer(global_input.begin() + s, global_input.begin() + s + cnt);
@@ -194,9 +213,9 @@ bool BatushinIQuickSortWithSimpleMergeMPI::RunImpl() {
     }
   }
 
-  iterativeQuickSort(local_data);
+  IterativeQuickSort(local_data);
 
-  std::vector<int> result = gatherAndMerge(rank, size, local_data);
+  std::vector<int> result = GatherAndMerge(rank, size, local_data);
 
   int result_size = 0;
   if (rank == 0) {

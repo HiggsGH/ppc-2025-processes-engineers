@@ -29,7 +29,7 @@ class BatushinIQuickSortWithSimpleMergePerfTests : public ppc::util::BaseRunPerf
 
     input_data_ = data;
     expected_result_ = data;
-    std::sort<std::vector<int>::iterator>(expected_result_.begin(), expected_result_.end());
+    std::sort(expected_result_.begin(), expected_result_.end(), std::less<int>());
   }
 
   bool CheckTestOutputData(OutType &output_data) final {

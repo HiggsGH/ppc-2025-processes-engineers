@@ -50,7 +50,7 @@ InType CreateInput(std::vector<int> data) {
 
 std::vector<int> SortedCopy(const std::vector<int> &v) {
   auto res = v;
-  std::sort<std::vector<int>::iterator>(res.begin(), res.end());
+  std::sort(res.begin(), res.end(), std::less<int>());
   return res;
 }
 

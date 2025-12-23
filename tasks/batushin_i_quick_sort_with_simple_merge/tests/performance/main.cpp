@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <random>
+#include <algorithm>
+#include <cstddef>
+#include <vector>
 
 #include "batushin_i_quick_sort_with_simple_merge/common/include/common.hpp"
 #include "batushin_i_quick_sort_with_simple_merge/mpi/include/ops_mpi.hpp"
@@ -16,13 +18,13 @@ class BatushinIQuickSortWithSimpleMergePerfTests : public ppc::util::BaseRunPerf
 
  public:
   void SetUp() override {
-    const size_t N = 5000000;
-    std::vector<int> data(N);
+    const size_t n = 5000000;
+    std::vector<int> data(n);
 
     unsigned int seed = 123456789;
-    for (size_t i = 0; i < N; ++i) {
-      seed = seed * 1103515245 + 12345;
-      data[i] = static_cast<int>(seed % 2000001) - 1000000;
+    for (size_t i = 0; i < n; ++i) {
+      seed = (seed * 1103515245U) + 12345U;
+      data[i] = static_cast<int>((seed / 65536U) % 2000001U) - 1000000;
     }
 
     input_data_ = data;

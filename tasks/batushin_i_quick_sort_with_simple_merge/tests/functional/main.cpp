@@ -4,12 +4,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <cstdint>
-#include <numeric>
-#include <stdexcept>
 #include <string>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 #include "batushin_i_quick_sort_with_simple_merge/common/include/common.hpp"
@@ -88,7 +84,8 @@ const auto kGtestValues = ppc::util::ExpandToValues(kTestTasksList);
 const auto kPerfTestName =
     BatushinIQuickSortWithSimpleMergeFuncTests::PrintFuncTestName<BatushinIQuickSortWithSimpleMergeFuncTests>;
 
-INSTANTIATE_TEST_SUITE_P(PicMatrixTests, BatushinIQuickSortWithSimpleMergeFuncTests, kGtestValues, kPerfTestName);
+INSTANTIATE_TEST_SUITE_P(QuickSortWithSimpleMergeTests, BatushinIQuickSortWithSimpleMergeFuncTests, kGtestValues,
+                         kPerfTestName);
 
 }  // namespace
 

@@ -1,11 +1,10 @@
 #include "batushin_i_quick_sort_with_simple_merge/seq/include/ops_seq.hpp"
 
-#include <numeric>
+#include <algorithm>
 #include <stack>
 #include <vector>
 
 #include "batushin_i_quick_sort_with_simple_merge/common/include/common.hpp"
-#include "util/include/util.hpp"
 
 namespace batushin_i_quick_sort_with_simple_merge {
 
@@ -30,8 +29,10 @@ void IterativeQuickSort(std::vector<int> &data) {
   if (data.size() <= 1) {
     return;
   }
+
   struct Segment {
-    int begin, end;
+    int begin;
+    int end;
   };
   std::stack<Segment> stk;
   stk.push({0, static_cast<int>(data.size() - 1)});
@@ -42,16 +43,21 @@ void IterativeQuickSort(std::vector<int> &data) {
       continue;
     }
 
-    int pivot = data[seg.begin + (seg.end - seg.begin) / 2];
+    int mid = seg.begin + ((seg.end - seg.begin) / 2);
+    std::swap(data[mid], data[seg.begin]);
+    int pivot = data[seg.begin];
+
     int i = seg.begin - 1;
     int j = seg.end + 1;
     while (true) {
-      do {
-        i++;
-      } while (data[i] < pivot);
-      do {
-        j--;
-      } while (data[j] > pivot);
+      ++i;
+      while (data[i] < pivot) {
+        ++i;
+      }
+      --j;
+      while (data[j] > pivot) {
+        --j;
+      }
       if (i >= j) {
         break;
       }

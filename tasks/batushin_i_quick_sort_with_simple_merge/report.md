@@ -347,18 +347,23 @@ void DistributeData(int rank, int size, const std::vector<int> &global_input, st
 
 void BroadcastResult(int rank, std::vector<int> &result, std::vector<int> &output) {
   int result_size = 0;
+
   if (rank == 0) {
+    result_size = static_cast<int>(result.size());
     output = std::move(result);
-    result_size = static_cast<int>(output.size());
-    MPI_Bcast(&result_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    if (result_size > 0) {
+  }
+  MPI_Bcast(&result_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  if (result_size > 0) {
+    if (rank == 0) {
+      MPI_Bcast(output.data(), result_size, MPI_INT, 0, MPI_COMM_WORLD);
+    } else {
+      output.resize(result_size);
       MPI_Bcast(output.data(), result_size, MPI_INT, 0, MPI_COMM_WORLD);
     }
   } else {
-    MPI_Bcast(&result_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    if (result_size > 0) {
-      output.resize(result_size);
-      MPI_Bcast(output.data(), result_size, MPI_INT, 0, MPI_COMM_WORLD);
+    if (rank != 0) {
+      output.clear();
     }
   }
 }
@@ -427,7 +432,6 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
     if (count > 0) {
       MPI_Send(local_data.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
-    MPI_Barrier(MPI_COMM_WORLD);
     return {};
   }
 

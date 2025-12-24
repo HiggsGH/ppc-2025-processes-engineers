@@ -199,7 +199,7 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
       continue;
     }
     if (result.empty()) {
-      result = block;
+      result.assign(block.begin(), block.end());
     } else {
       std::vector<int> merged;
       merged.reserve(result.size() + block.size());

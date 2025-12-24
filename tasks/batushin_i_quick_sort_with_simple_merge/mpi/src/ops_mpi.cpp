@@ -170,17 +170,18 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
     int count = static_cast<int>(local_data.size());
     MPI_Send(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
     if (count > 0) {
-      std::vector<int> send_buffer(local_data);
-      MPI_Send(send_buffer.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(local_data.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
     return {};
   }
 
   std::vector<std::vector<int>> all_blocks;
   all_blocks.reserve(size);
-  all_blocks.emplace_back();
+
   if (!local_data.empty()) {
-    all_blocks.back().assign(local_data.begin(), local_data.end());
+    all_blocks.emplace_back(local_data.begin(), local_data.end());
+  } else {
+    all_blocks.emplace_back();
   }
 
   for (int src = 1; src < size; ++src) {
@@ -203,7 +204,28 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
     } else {
       std::vector<int> merged;
       merged.reserve(result.size() + block.size());
-      std::ranges::merge(result, block, std::back_inserter(merged));
+
+      // Ручное слияние вместо std::ranges::merge
+      auto it1 = result.begin();
+      auto it2 = block.begin();
+      while (it1 != result.end() && it2 != block.end()) {
+        if (*it1 <= *it2) {
+          merged.push_back(*it1);
+          ++it1;
+        } else {
+          merged.push_back(*it2);
+          ++it2;
+        }
+      }
+      while (it1 != result.end()) {
+        merged.push_back(*it1);
+        ++it1;
+      }
+      while (it2 != block.end()) {
+        merged.push_back(*it2);
+        ++it2;
+      }
+
       result = std::move(merged);
     }
   }
@@ -230,7 +252,10 @@ bool BatushinIQuickSortWithSimpleMergeMPI::RunImpl() {
 
   std::vector<int> local_data;
   DistributeData(rank, size, global_input, local_data);
-  IterativeQuickSort(local_data);
+
+  if (!local_data.empty()) {
+    IterativeQuickSort(local_data);
+  }
 
   std::vector<int> result = GatherAndMerge(rank, size, local_data);
   BroadcastResult(rank, result, GetOutput());

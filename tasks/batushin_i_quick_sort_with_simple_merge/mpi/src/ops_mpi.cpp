@@ -192,6 +192,29 @@ std::vector<std::vector<int>> CollectAllBlocks(int size, const std::vector<int> 
   return all_blocks;
 }
 
+std::vector<int> MergeTwoBlocks(const std::vector<int> &a, const std::vector<int> &b) {
+  std::vector<int> merged;
+  merged.reserve(a.size() + b.size());
+
+  auto it1 = a.begin();
+  auto it2 = b.begin();
+  while (it1 != a.end() && it2 != b.end()) {
+    if (*it1 <= *it2) {
+      merged.push_back(*it1++);
+    } else {
+      merged.push_back(*it2++);
+    }
+  }
+  while (it1 != a.end()) {
+    merged.push_back(*it1++);
+  }
+  while (it2 != b.end()) {
+    merged.push_back(*it2++);
+  }
+
+  return merged;
+}
+
 std::vector<int> MergeSortedBlocks(const std::vector<std::vector<int>> &all_blocks) {
   std::vector<int> result;
   for (const auto &block : all_blocks) {
@@ -201,26 +224,7 @@ std::vector<int> MergeSortedBlocks(const std::vector<std::vector<int>> &all_bloc
     if (result.empty()) {
       result.assign(block.begin(), block.end());
     } else {
-      std::vector<int> merged;
-      merged.reserve(result.size() + block.size());
-
-      auto it1 = result.begin();
-      auto it2 = block.begin();
-      while (it1 != result.end() && it2 != block.end()) {
-        if (*it1 <= *it2) {
-          merged.push_back(*it1++);
-        } else {
-          merged.push_back(*it2++);
-        }
-      }
-      while (it1 != result.end()) {
-        merged.push_back(*it1++);
-      }
-      while (it2 != block.end()) {
-        merged.push_back(*it2++);
-      }
-
-      result = std::move(merged);
+      result = MergeTwoBlocks(result, block);
     }
   }
   return result;

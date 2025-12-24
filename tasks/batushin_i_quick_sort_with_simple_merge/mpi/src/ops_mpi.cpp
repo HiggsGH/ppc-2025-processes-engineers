@@ -117,7 +117,7 @@ std::pair<int, int> ComputeLocalRange(int rank, int size, int total) {
   return std::make_pair(start, end);
 }
 
-void DistributeData(int rank, int size, const std::vector<int>& global_input, std::vector<int>& local_data) {
+void DistributeData(int rank, int size, const std::vector<int> &global_input, std::vector<int> &local_data) {
   auto range = ComputeLocalRange(rank, size, static_cast<int>(global_input.size()));
   int local_start = range.first;
   int local_end = range.second;
@@ -126,8 +126,7 @@ void DistributeData(int rank, int size, const std::vector<int>& global_input, st
   if (rank == 0) {
     if (local_count > 0) {
       local_data.resize(local_count);
-      std::copy(global_input.begin() + local_start, 
-                global_input.begin() + local_start + local_count,
+      std::copy(global_input.begin() + local_start, global_input.begin() + local_start + local_count,
                 local_data.begin());
     }
     for (int proc_rank = 1; proc_rank < size; ++proc_rank) {
@@ -204,8 +203,7 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
     } else {
       std::vector<int> merged;
       merged.reserve(result.size() + block.size());
-      // ПРОСТОЙ ВЫЗОВ БЕЗ RANGES
-      std::merge(result.begin(), result.end(), block.begin(), block.end(), std::back_inserter(merged));
+      std::ranges::merge(result, block, std::back_inserter(merged));
       result = std::move(merged);
     }
   }

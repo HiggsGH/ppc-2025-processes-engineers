@@ -3,7 +3,6 @@
 #include <mpi.h>
 
 #include <algorithm>
-#include <iterator>
 #include <stack>
 #include <utility>
 #include <vector>
@@ -165,16 +164,7 @@ void BroadcastResult(int rank, std::vector<int> &result, std::vector<int> &outpu
   }
 }
 
-std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &local_data) {
-  if (rank != 0) {
-    int count = static_cast<int>(local_data.size());
-    MPI_Send(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    if (count > 0) {
-      MPI_Send(local_data.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    }
-    return {};
-  }
-
+std::vector<std::vector<int>> CollectAllBlocks(int size, const std::vector<int> &local_data) {
   std::vector<std::vector<int>> all_blocks;
   all_blocks.reserve(size);
 
@@ -194,6 +184,10 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
     }
   }
 
+  return all_blocks;
+}
+
+std::vector<int> MergeSortedBlocks(const std::vector<std::vector<int>> &all_blocks) {
   std::vector<int> result;
   for (const auto &block : all_blocks) {
     if (block.empty()) {
@@ -209,26 +203,37 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
       auto it2 = block.begin();
       while (it1 != result.end() && it2 != block.end()) {
         if (*it1 <= *it2) {
-          merged.push_back(*it1);
-          ++it1;
+          merged.push_back(*it1++);
         } else {
-          merged.push_back(*it2);
-          ++it2;
+          merged.push_back(*it2++);
         }
       }
       while (it1 != result.end()) {
-        merged.push_back(*it1);
-        ++it1;
+        merged.push_back(*it1++);
       }
       while (it2 != block.end()) {
-        merged.push_back(*it2);
-        ++it2;
+        merged.push_back(*it2++);
       }
 
       result = std::move(merged);
     }
   }
   return result;
+}
+
+std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &local_data) {
+  if (rank != 0) {
+    int count = static_cast<int>(local_data.size());
+    MPI_Send(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    if (count > 0) {
+      MPI_Send(local_data.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    return {};
+  }
+
+  auto all_blocks = CollectAllBlocks(size, local_data);
+  return MergeSortedBlocks(all_blocks);
 }
 
 }  // namespace

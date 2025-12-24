@@ -99,9 +99,11 @@ count = base + (rank < extra ? 1 : 0)
 **Вспомогательные функции:**
 - `ComputeLocalRange()` - вычисление диапазона элементов для процесса
 - `DistributeData()` - распределение исходных данных между процессами
-- `IterativeQuickSort()` - итеративная быстрая сортировка с оптимизацией
-- `SortSmallArray()` - сортировка вставками для малых подмассивов
-- `GatherAndMerge()` - сбор и последовательное слияние отсортированных блоков
+- `IterativeQuickSort()` - итеративная быстрая сортировка с оптимизацией для малых подмассивов
+- `SortSmallArray()` - сортировка вставками для подмассивов размером ≤ 16
+- `PartitionArray()` - разбиение массива по схеме Хоара с выбором медианы из трёх
+- `CollectAllBlocks()` - централизованный сбор отсортированных блоков от всех процессов в rank 0
+- `MergeSortedBlocks()` - последовательное слияние отсортированных блоков в единый массив
 - `BroadcastResult()` - рассылка финального результата всем процессам
 
 **Допущения:**
@@ -361,16 +363,7 @@ void BroadcastResult(int rank, std::vector<int> &result, std::vector<int> &outpu
   }
 }
 
-std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &local_data) {
-  if (rank != 0) {
-    int count = static_cast<int>(local_data.size());
-    MPI_Send(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    if (count > 0) {
-      MPI_Send(local_data.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    }
-    return {};
-  }
-
+std::vector<std::vector<int>> CollectAllBlocks(int size, const std::vector<int> &local_data) {
   std::vector<std::vector<int>> all_blocks;
   all_blocks.reserve(size);
 
@@ -390,6 +383,10 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
     }
   }
 
+  return all_blocks;
+}
+
+std::vector<int> MergeSortedBlocks(const std::vector<std::vector<int>> &all_blocks) {
   std::vector<int> result;
   for (const auto &block : all_blocks) {
     if (block.empty()) {
@@ -400,32 +397,42 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
     } else {
       std::vector<int> merged;
       merged.reserve(result.size() + block.size());
-      
-      // Ручное слияние вместо std::ranges::merge
+
       auto it1 = result.begin();
       auto it2 = block.begin();
       while (it1 != result.end() && it2 != block.end()) {
         if (*it1 <= *it2) {
-          merged.push_back(*it1);
-          ++it1;
+          merged.push_back(*it1++);
         } else {
-          merged.push_back(*it2);
-          ++it2;
+          merged.push_back(*it2++);
         }
       }
       while (it1 != result.end()) {
-        merged.push_back(*it1);
-        ++it1;
+        merged.push_back(*it1++);
       }
       while (it2 != block.end()) {
-        merged.push_back(*it2);
-        ++it2;
+        merged.push_back(*it2++);
       }
-      
+
       result = std::move(merged);
     }
   }
   return result;
+}
+
+std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &local_data) {
+  if (rank != 0) {
+    int count = static_cast<int>(local_data.size());
+    MPI_Send(&count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    if (count > 0) {
+      MPI_Send(local_data.data(), count, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    return {};
+  }
+
+  auto all_blocks = CollectAllBlocks(size, local_data);
+  return MergeSortedBlocks(all_blocks);
 }
 
 }  // namespace
@@ -448,7 +455,7 @@ bool BatushinIQuickSortWithSimpleMergeMPI::RunImpl() {
 
   std::vector<int> local_data;
   DistributeData(rank, size, global_input, local_data);
-  
+
   if (!local_data.empty()) {
     IterativeQuickSort(local_data);
   }

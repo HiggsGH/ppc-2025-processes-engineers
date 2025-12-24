@@ -205,7 +205,6 @@ std::vector<int> GatherAndMerge(int rank, int size, const std::vector<int> &loca
       std::vector<int> merged;
       merged.reserve(result.size() + block.size());
 
-      // Ручное слияние вместо std::ranges::merge
       auto it1 = result.begin();
       auto it2 = block.begin();
       while (it1 != result.end() && it2 != block.end()) {

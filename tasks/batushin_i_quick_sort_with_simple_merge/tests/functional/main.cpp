@@ -73,12 +73,13 @@ const std::array<TestType, 15> kTestParam = {
                     SortedCopy({10, 9, 8, 7, 6, 5, 4, 3, 2, 1})),
     std::make_tuple("duplicates_mixed", CreateInput({2, 1, 2, 3, 1, 3}), SortedCopy({2, 1, 2, 3, 1, 3})),
     std::make_tuple("zigzag_6", CreateInput({1, 5, 2, 4, 3, 6}), SortedCopy({1, 5, 2, 4, 3, 6})),
-    std::make_tuple("large_sorted_20", CreateInput({0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}), 
-                std::vector<int>({0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19})),
-    std::make_tuple("large_reverse_17", CreateInput({16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0}), 
-                std::vector<int>({0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16})),
-    std::make_tuple("edge_case_16", CreateInput({15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0}), 
-                std::vector<int>({0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15})),
+    std::make_tuple("large_sorted_20",
+                    CreateInput({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}),
+                    std::vector<int>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19})),
+    std::make_tuple("large_reverse_17", CreateInput({16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}),
+                    std::vector<int>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})),
+    std::make_tuple("edge_case_16", CreateInput({15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}),
+                    std::vector<int>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})),
     std::make_tuple("already_sorted", CreateInput({-5, -2, 0, 3, 7}), std::vector<int>({-5, -2, 0, 3, 7}))};
 
 const auto kTestTasksList = std::tuple_cat(ppc::util::AddFuncTask<BatushinIQuickSortWithSimpleMergeMPI, InType>(
